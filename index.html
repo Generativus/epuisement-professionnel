@@ -135,8 +135,11 @@
             word-break: break-all;
         }
         
-        /* Hidden until game starts */
+        /* Hidden until game starts, or always hidden for lobby elements on pair */
         .in-game-element {
+            display: none;
+        }
+        .host-only-element {
             display: none;
         }
     </style>
@@ -203,9 +206,9 @@
             <h3 class="text-2xl font-bold mb-2">Code du Lobby</h3>
             <p class="text-5xl font-extrabold text-player-color tracking-widest mb-4 border-2 border-gray-600 p-2 rounded-lg" id="lobby-code-display">---</p>
             
-            <!-- Liste des Joueurs (Hôte seulement) -->
+            <!-- Liste des Joueurs (Commune Hôte/Pair) -->
             <div id="player-list-container" class="mb-6">
-                <h4 class="text-lg font-semibold mb-2 border-b border-gray-700 pb-1">Joueurs Connectés (<span id="player-count">0</span>/<span id="max-players-display">8</span>)</h4>
+                <h4 class="text-lg font-semibold mb-2 border-b border-gray-700 pb-1">Joueurs dans le Lobby (<span id="player-count">0</span>/<span id="max-players-display">8</span>)</h4>
                 <ul id="player-list" class="space-y-1 text-left max-h-48 overflow-y-auto">
                     <!-- Player items will be inserted here -->
                 </ul>
@@ -213,10 +216,13 @@
             
             <!-- Bouton Démarrer (Hôte seulement) -->
             <button id="start-game-button" disabled
-                    class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                    class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed host-only-element">
                 Démarrer la Partie (<span id="start-min-count">4</span> min)
             </button>
             
+            <!-- Message d'attente pour le Pair -->
+            <p id="waiting-message" class="text-sm text-gray-400 mt-4">En attente que l'hôte démarre la partie...</p>
+
             <!-- Affichage de l'ID (Aide au débogage) -->
             <div id="debug-info" class="text-center mt-4">
                 <p class="debug-id-text">Votre ID: <span id="local-id-display">N/A</span></p>
@@ -249,19 +255,19 @@
     // Configuration
     const SIGNALING_SERVER_URL = "wss://webrtc-epuisement-professionnel.onrender.com"; 
     const PEER_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    const MIN_PLAYERS = 2; // Changé de 4 à 2 pour faciliter les tests
+    const MIN_PLAYERS = 2; // Test value, should be 4-8 in final version
     const MAX_PLAYERS = 8;
     const TIME_BETWEEN_POINTS_MS = 10000;
     const POINTS_PER_INTERVAL = 10;
 
-    // États de Jeu
+    // Game States
     const GAME_STATES = {
         LOBBY: 'LOBBY',
         IN_GAME: 'IN_GAME',
         GAME_OVER: 'GAME_OVER'
     };
     
-    // État Local
+    // Local State
     let signalingSocket;
     let localPlayer = {
         id: crypto.randomUUID(), // Unique ID for the player (UUID)
@@ -269,15 +275,16 @@
         colorClass: null,
         isHost: false,
         hostCode: null, // The short 6-char code if we are the host
-        hostId: null, // The UUID of the host we are connected to
+        hostId: null, // The UUID of the host we are connected to (UUID)
         workPoints: 0,
     };
-    let gameState = GAME_STATES.LOBBY; // État initial
+    let gameState = GAME_STATES.LOBBY; // Initial state
 
     // P2P State
     let peerConnections = {}; // Stores RTCPeerConnection objects, keyed by peerId (UUID)
     let dataChannels = {}; // Stores RTCDataChannel objects, keyed by peerId (UUID)
-    let connectedPlayers = {}; // Stores { id: { name, colorClass, isConnected: boolean } } of ALL players, keyed by ID (UUID)
+    // Stores { id: { name, colorClass, isConnected: boolean } } of ALL players, keyed by ID (UUID)
+    let connectedPlayers = {}; 
 
     // DOM Elements
     const $modal = document.getElementById('modal-screen');
@@ -293,7 +300,7 @@
     const $progressBarInner = document.getElementById('progress-bar-inner');
     const $alertBox = document.getElementById('alert-box');
     
-    // Nouveaux éléments du Lobby
+    // Lobby elements
     const $lobbyView = document.getElementById('lobby-view');
     const $lobbyCodeDisplay = document.getElementById('lobby-code-display');
     const $playerList = document.getElementById('player-list');
@@ -303,6 +310,7 @@
     const $startMinCount = document.getElementById('start-min-count');
     const $gameHeader = document.getElementById('game-header');
     const $inputArea = document.getElementById('input-area');
+    const $waitingMessage = document.getElementById('waiting-message');
     
     // Debug
     const $localIdDisplay = document.getElementById('local-id-display');
@@ -326,12 +334,12 @@
     
     function updateDebugDisplay() {
         $localIdDisplay.textContent = localPlayer.id;
-        $hostIdDisplay.textContent = localPlayer.isHost ? localPlayer.hostCode : (localPlayer.hostId || 'N/A');
+        $hostIdDisplay.textContent = localPlayer.isHost ? localPlayer.hostCode : (localPlayer.hostCode || 'N/A');
     }
 
     function assignRandomColor() {
         if (usedColors.size === PLAYER_COLORS.length) {
-            // Re-assigner si toutes les couleurs sont prises (ne devrait pas arriver souvent)
+            // Re-assign if all colors are taken (shouldn't happen often)
             return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
         }
         
@@ -342,16 +350,22 @@
     }
     
     function updateAccentColor() {
+        // Ensure localPlayer.colorClass is set before calling
+        if (!localPlayer.colorClass) return;
+
         const rootStyles = document.documentElement.style;
         const colorValue = getComputedStyle(document.body).getPropertyValue(`--${localPlayer.colorClass}`).trim();
         rootStyles.setProperty('--accent-player', colorValue);
         
         rootStyles.setProperty('--color-progress-bar', colorValue);
         $workPointsDisplay.style.color = colorValue;
-        $messageInput.style.borderColor = colorValue;
+        
+        // Update input field and button colors
+        const modalCard = document.getElementById('modal-card');
+        modalCard.style.borderColor = colorValue;
+        $messageInput.style.setProperty('border-color', colorValue, 'important');
         $sendButton.style.backgroundColor = colorValue; 
         
-        // Mettre à jour la couleur du code du lobby
         $lobbyCodeDisplay.style.borderColor = colorValue;
         $lobbyCodeDisplay.style.color = colorValue;
     }
@@ -366,7 +380,7 @@
         
         const nameSpan = document.createElement('span');
         nameSpan.className = 'message-name';
-        // Utiliser la couleur du joueur à partir de la variable CSS
+        // Use the player's assigned color (fetched from the CSS variable)
         const colorValue = getComputedStyle(document.body).getPropertyValue(`--${senderColorClass}`).trim();
         nameSpan.style.color = colorValue;
         nameSpan.textContent = senderName;
@@ -378,8 +392,7 @@
         bubble.appendChild(textP);
         messageDiv.appendChild(bubble);
         
-        $chatContainer.prepend(messageDiv); // Prépender pour l'ordre inverse
-        // $chatContainer.scrollTop = $chatContainer.scrollHeight; // Pas nécessaire si on utilise flex-direction: column-reverse
+        $chatContainer.prepend(messageDiv); 
     }
     
     function updateWorkPoints(points) {
@@ -387,7 +400,7 @@
         $workPointsDisplay.innerHTML = `<span class="text-gray-400 mr-1">Points:</span> ${localPlayer.workPoints}`;
     }
     
-    // Met à jour la liste des joueurs dans le lobby
+    // Updates the player list in the lobby and the Start button status
     function updateLobbyPlayersDisplay(players) {
         $playerList.innerHTML = '';
         const playerArray = Object.values(players);
@@ -404,8 +417,12 @@
             nameSpan.textContent = player.name + (player.id === localPlayer.id ? " (Vous)" : "");
             
             const statusSpan = document.createElement('span');
-            statusSpan.className = `text-xs font-semibold px-2 py-0.5 rounded-full ${player.isConnected ? 'bg-green-700' : 'bg-red-700'}`;
-            statusSpan.textContent = player.isConnected ? 'Connecté' : 'Signalisation';
+            // If the player is the host, show connected only if they are the local player (they are always connected to themselves)
+            // If the player is a peer, check isConnected flag from the host's list
+            const isConnected = player.isConnected || (localPlayer.isHost && player.id === localPlayer.id); 
+
+            statusSpan.className = `text-xs font-semibold px-2 py-0.5 rounded-full ${isConnected ? 'bg-green-700' : 'bg-red-700'}`;
+            statusSpan.textContent = isConnected ? 'Connecté' : 'Signalisation';
 
             listItem.appendChild(nameSpan);
             listItem.appendChild(statusSpan);
@@ -413,10 +430,12 @@
         });
         
         $playerCount.textContent = playerArray.length;
-        $maxPlayersDisplay.textContent = MAX_PLAYERS;
         
-        // Logique du bouton Démarrer (Hôte seulement)
+        // Host-only logic
         if (localPlayer.isHost) {
+            document.querySelector('.host-only-element').style.display = 'block';
+            $waitingMessage.style.display = 'none';
+
             const connectedCount = playerArray.filter(p => p.isConnected).length;
             const canStart = connectedCount >= MIN_PLAYERS;
             
@@ -424,10 +443,14 @@
             $startGameButton.textContent = canStart 
                 ? "Démarrer la Partie" 
                 : `Démarrer la Partie (${connectedCount}/${MIN_PLAYERS} min)`;
+        } else {
+            // Peer logic
+            document.querySelector('.host-only-element').style.display = 'none';
+            $waitingMessage.style.display = 'block';
         }
     }
     
-    // Cache le lobby et affiche les éléments de jeu
+    // Hides lobby and shows game elements
     function setGameState(newState) {
         gameState = newState;
 
@@ -442,9 +465,11 @@
     }
 
 
-    // --- P2P / SIGNALISATION LOGIC ---
+    // --- P2P / SIGNALING LOGIC ---
     
     function registerClient() {
+        // Host registers with the short hostCode (6 chars)
+        // Peer registers with its full UUID (to receive direct Offers/Candidates)
         const registrationId = localPlayer.isHost ? localPlayer.hostCode : localPlayer.id;
 
         const registerMessage = {
@@ -454,9 +479,9 @@
         
         if (signalingSocket.readyState === WebSocket.OPEN) {
             signalingSocket.send(JSON.stringify(registerMessage));
-            console.log(`[P2P] Client enregistré auprès du serveur avec l'ID: ${registrationId} (Type: ${localPlayer.isHost ? 'Hôte' : 'Pair'})`);
+            console.log(`[P2P] Client registered with ID: ${registrationId} (Type: ${localPlayer.isHost ? 'Host' : 'Peer'})`);
         } else {
-            console.error('[P2P] Échec de l\'enregistrement : Socket non ouvert.');
+            console.error('[P2P] Registration failed: Socket not open.');
         }
     }
 
@@ -464,9 +489,8 @@
         signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
         
         signalingSocket.onopen = () => {
-            console.log('[P2P] Connecté au serveur de signalisation.');
-            // Si l'utilisateur a déjà choisi son rôle, on peut s'enregistrer
-            if (localPlayer.hostCode) {
+            console.log('[P2P] Connected to signaling server.');
+            if (localPlayer.hostCode) { // If role is already chosen
                  registerClient();
             }
         };
@@ -474,16 +498,20 @@
         signalingSocket.onmessage = handleSignalingMessage;
 
         signalingSocket.onclose = () => {
-            console.log('[P2P] Déconnecté du serveur de signalisation.');
-            showAlert("Déconnecté du serveur de signalisation.");
+            console.log('[P2P] Disconnected from signaling server.');
+            showAlert("Disconnected from signaling server.");
         };
 
         signalingSocket.onerror = (error) => {
-            console.error('[P2P] Erreur WebSocket:', error);
-            showAlert("Erreur de connexion au serveur de signalisation.");
+            console.error('[P2P] WebSocket error:', error);
+            showAlert("Error connecting to signaling server.");
         };
     }
     
+    /**
+     * @description Broadcasts data to all currently OPEN DataChannels.
+     * Only used by the Host.
+     */
     function broadcastData(data) {
         const message = JSON.stringify(data);
         let sentCount = 0;
@@ -494,30 +522,28 @@
                 sentCount++;
             }
         }
-        console.log(`[P2P] Message broadcasté à ${sentCount} pairs.`);
+        console.log(`[P2P] Message broadcasted to ${sentCount} peers.`);
     }
 
     /**
-     * @description Gère la création de RTCPeerConnection (PC) et l'initialisation des Data Channels.
-     * @param {string} peerId - L'UUID du pair distant.
-     * @param {boolean} isHost - Si le joueur local est l'hôte.
+     * @description Creates an RTCPeerConnection and initializes Data Channels.
      */
     function setupPeerConnection(peerId, isHost, peerName, peerColorClass) {
         if (peerConnections[peerId]) {
-            console.warn(`[P2P] Connexion avec ${peerId} existe déjà.`);
+            console.warn(`[P2P] Connection with ${peerId} already exists.`);
             return peerConnections[peerId];
         }
 
         const pc = new RTCPeerConnection(PEER_CONFIG);
         peerConnections[peerId] = pc;
         
-        // 1. Gestion des ICE Candidates
+        // 1. ICE Candidates
         pc.onicecandidate = (event) => {
             if (event.candidate) {
                 const candidateMessage = {
                     type: 'candidate',
-                    senderId: localPlayer.id, 
-                    // Si on est l'hôte, on envoie au joiner (UUID). Si on est le joiner, on envoie à l'hôte (hostCode)
+                    senderId: localPlayer.id, // My UUID
+                    // If Host, send to the Peer (UUID). If Peer, send to Host (HostCode)
                     receiverId: isHost ? peerId : localPlayer.hostCode, 
                     candidate: event.candidate
                 };
@@ -525,33 +551,34 @@
             }
         };
 
-        // 2. Gestion des changements d'état
+        // 2. State changes (WebRTC connected/disconnected)
         pc.onconnectionstatechange = () => {
-            console.log(`[P2P] État de la connexion avec ${peerId}: ${pc.connectionState}`);
+            console.log(`[P2P] Connection state with ${peerId}: ${pc.connectionState}`);
             
             if (pc.connectionState === 'connected') {
-                console.log(`[P2P] Connexion WebRTC établie avec ${peerId}.`);
-                showAlert(`Connexion WebRTC établie avec ${peerName || peerId}.`);
+                console.log(`[P2P] WebRTC connection established with ${peerId}.`);
+                showAlert(`WebRTC connection established with ${peerName || peerId}.`);
                 
-                // Mettre à jour l'état du joueur connecté et diffuser si on est l'hôte
+                // Update player status in the list
                 if (connectedPlayers[peerId]) {
                     connectedPlayers[peerId].isConnected = true;
                 }
+                
+                // Host must update display and broadcast new list
                 if (isHost) {
                     updateLobbyPlayersDisplay(connectedPlayers);
-                    // L'hôte doit diffuser la nouvelle liste à TOUS les pairs connectés
                     broadcastData({
                         type: 'player_list_update',
                         players: connectedPlayers
                     });
                 }
             } else if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-                // Gérer la déconnexion
+                // Handle disconnection
                 if (connectedPlayers[peerId]) {
                     delete connectedPlayers[peerId];
                     delete dataChannels[peerId];
                     delete peerConnections[peerId];
-                    showAlert(`Le joueur ${peerName || peerId} s'est déconnecté.`);
+                    showAlert(`Player ${peerName || peerId} disconnected.`);
                 }
                 if (isHost) {
                     updateLobbyPlayersDisplay(connectedPlayers);
@@ -567,31 +594,32 @@
     }
 
     /**
-     * @description Gère l'initialisation du Data Channel une fois qu'il est créé/reçu.
+     * @description Handles Data Channel initialization (when created or received).
      */
     function setupDataChannel(dataChannel, peerId) {
         dataChannels[peerId] = dataChannel;
         
         dataChannel.onopen = () => {
-            console.log(`[P2P] DataChannel 'game_channel' ouvert avec ${peerId}`);
+            console.log(`[P2P] DataChannel 'game_channel' opened with ${peerId}`);
             
-            if (!localPlayer.isHost) {
-                 // Le pair active l'input SEULEMENT si la partie a déjà commencé
-                if (gameState === GAME_STATES.IN_GAME) {
-                    $messageInput.disabled = false;
-                    $sendButton.disabled = false;
-                    $messageInput.focus();
-                }
-            } else {
-                 // Hôte envoie les infos de tous les joueurs et l'état de la partie
+            if (localPlayer.isHost) {
+                 // CRITICAL: Host sends the full player list immediately upon channel open
                  dataChannel.send(JSON.stringify({
                      type: 'player_list_update',
                      players: connectedPlayers
                  }));
+                 // Send game state just in case
                  dataChannel.send(JSON.stringify({
                      type: 'game_state_update',
                      gameState: gameState
                  }));
+            }
+            
+            // Activate input only if the game is already IN_GAME
+            if (gameState === GAME_STATES.IN_GAME) {
+                $messageInput.disabled = false;
+                $sendButton.disabled = false;
+                $messageInput.focus();
             }
         };
 
@@ -600,21 +628,21 @@
                 const data = JSON.parse(event.data);
                 handleP2PData(data, peerId);
             } catch (e) {
-                console.error('[P2P] Erreur de parsing P2P:', e);
+                console.error('[P2P] P2P parsing error:', e);
             }
         };
         
         dataChannel.onclose = () => {
-            // Géré dans onconnectionstatechange pour une meilleure synchronisation
+            // Handled in onconnectionstatechange
         };
         
         dataChannel.onerror = (error) => {
-            console.error(`[P2P] Erreur DataChannel avec ${peerId}:`, error);
+            console.error(`[P2P] DataChannel error with ${peerId}:`, error);
         };
     }
 
     /**
-     * @description Gère les messages reçus via le serveur de signalisation (WebSocket).
+     * @description Handles messages received via the signaling server (WebSocket).
      */
     function handleSignalingMessage(event) {
         try {
@@ -623,22 +651,22 @@
             const isTargetedToHost = message.receiverId === localPlayer.hostCode && localPlayer.isHost;
             const isTargetedToPeer = message.receiverId === localPlayer.id && !localPlayer.isHost;
             
-            // 1. Demande de jonction (Hôte la reçoit sur son HostCode)
+            // 1. Join Request (Host receives on its HostCode)
             if (message.type === 'join_request' && localPlayer.isHost && message.hostId === localPlayer.hostCode) {
-                console.log(`[P2P] Hôte a reçu la demande de jonction de ${message.joinerId}`);
+                console.log(`[P2P] Host received join request from ${message.joinerId}`);
                 
-                const peerId = message.joinerId; // UUID du pair
-                if (peerConnections[peerId]) return;
+                const peerId = message.joinerId; // Peer's UUID
+                if (peerConnections[peerId] || Object.keys(connectedPlayers).length >= MAX_PLAYERS) return;
                 
-                // 1. Enregistrer le nouveau joueur
+                // 1. Register new player
                 const color = assignRandomColor();
                 connectedPlayers[peerId] = { 
                     id: peerId, 
                     name: message.joinerName, 
                     colorClass: color,
-                    isConnected: false // Pas encore WebRTC connected
+                    isConnected: false // Not WebRTC connected yet
                 };
-                updateLobbyPlayersDisplay(connectedPlayers); // Afficher immédiatement dans le lobby
+                updateLobbyPlayersDisplay(connectedPlayers); 
                 
                 const pc = setupPeerConnection(peerId, true, message.joinerName, color);
                 const dataChannel = pc.createDataChannel('game_channel');
@@ -649,50 +677,51 @@
                     .then(() => {
                         const offerMessage = {
                             type: 'offer',
-                            senderId: localPlayer.id, // Mon UUID pour que le pair connaisse l'ID de l'hôte
-                            receiverId: peerId, // Ciblage: UUID du pair
+                            senderId: localPlayer.id, // Host's UUID
+                            receiverId: peerId, // Target: Peer's UUID
                             sdp: pc.localDescription,
-                            joinerName: message.joinerName,
-                            joinerColorClass: color, // Envoyer la couleur attribuée
-                            hostId: localPlayer.id, // Envoyer l'UUID de l'hôte pour le routage des candidats
+                            hostName: localPlayer.name,
+                            joinerColorClass: color, // Send the assigned color
+                            hostId: localPlayer.id, // Host's UUID for Peer's candidate routing
                         };
                         signalingSocket.send(JSON.stringify(offerMessage));
-                        console.log(`[P2P] Hôte a envoyé l'offre à ${peerId}`);
+                        console.log(`[P2P] Host sent offer to ${peerId}`);
                     });
             }
 
-            // 2. Offre (Pair la reçoit sur son UUID)
+            // 2. Offer (Peer receives on its UUID)
             else if (message.type === 'offer' && isTargetedToPeer) {
-                console.log(`[P2P] Pair a reçu l'offre de ${message.senderId}`);
+                console.log(`[P2P] Peer received offer from ${message.senderId}`);
                 
-                const peerId = message.senderId; // UUID de l'hôte
-                localPlayer.hostId = peerId; // Stocker l'UUID de l'hôte
+                const hostId = message.senderId; // Host's UUID
+                localPlayer.hostId = hostId; // Store Host's UUID
                 
-                // Mettre à jour les infos du joueur local
+                // Update local player info with color assigned by host
                 localPlayer.colorClass = message.joinerColorClass;
+                localPlayer.name = localPlayer.name + ' (Vous)'; // Update name for display
                 updateAccentColor();
                 updateDebugDisplay();
 
-                // 1. Enregistrer l'hôte dans la liste des joueurs
-                connectedPlayers[peerId] = { 
-                    id: peerId, 
-                    name: 'Hôte (' + message.joinerName + ')', 
-                    colorClass: assignRandomColor(), // La couleur de l'hôte n'est pas importante ici
-                    isConnected: false
+                // 1. Register the Host in the player list
+                connectedPlayers[hostId] = { 
+                    id: hostId, 
+                    name: message.hostName + ' (Hôte)', 
+                    colorClass: assignRandomColor(), // Host color is assigned randomly by peer, it is not critical
+                    isConnected: true // Assume Host is connected to itself
                 };
-                // Le pair s'ajoute aussi à la liste
+                // Peer adds itself (temporarily to see itself)
                 connectedPlayers[localPlayer.id] = { 
                     id: localPlayer.id, 
-                    name: localPlayer.name + ' (Vous)', 
+                    name: localPlayer.name, 
                     colorClass: localPlayer.colorClass,
-                    isConnected: false
+                    isConnected: false // Still needs WebRTC to connect
                 };
                 updateLobbyPlayersDisplay(connectedPlayers);
 
-                const pc = setupPeerConnection(peerId, false, message.joinerName, message.joinerColorClass);
+                const pc = setupPeerConnection(hostId, false, message.hostName, message.joinerColorClass);
 
                 pc.ondatachannel = (event) => {
-                    setupDataChannel(event.channel, peerId);
+                    setupDataChannel(event.channel, hostId);
                 };
 
                 pc.setRemoteDescription(new RTCSessionDescription(message.sdp))
@@ -701,59 +730,59 @@
                     .then(() => {
                         const answerMessage = {
                             type: 'answer',
-                            senderId: localPlayer.id, // Mon UUID
-                            receiverId: localPlayer.hostCode, // Ciblage: HostCode
+                            senderId: localPlayer.id, // My UUID
+                            receiverId: localPlayer.hostCode, // Target: HostCode
                             sdp: pc.localDescription
                         };
                         signalingSocket.send(JSON.stringify(answerMessage));
-                        console.log(`[P2P] Pair a envoyé la réponse à l'hôte ${localPlayer.hostCode}`);
+                        console.log(`[P2P] Peer sent answer to host ${localPlayer.hostCode}`);
                     });
             }
 
-            // 3. Réponse (Hôte la reçoit sur son HostCode)
+            // 3. Answer (Host receives on its HostCode)
             else if (message.type === 'answer' && isTargetedToHost) {
-                console.log(`[P2P] Hôte a reçu la réponse de ${message.senderId}`);
-                const peerId = message.senderId; // UUID du pair
+                console.log(`[P2P] Host received answer from ${message.senderId}`);
+                const peerId = message.senderId; // Peer's UUID
                 const pc = peerConnections[peerId];
                 if (pc) {
                     pc.setRemoteDescription(new RTCSessionDescription(message.sdp))
-                        .catch(e => console.error('[P2P] Erreur setRemoteDescription (Answer):', e));
+                        .catch(e => console.error('[P2P] setRemoteDescription (Answer) error:', e));
                 }
             }
 
             // 4. ICE Candidate
             else if (message.type === 'candidate') {
                  if (isTargetedToHost) {
-                    // C'est un pair qui envoie, le senderId est l'UUID du pair
+                    // It's a Peer sending, senderId is the Peer's UUID
                     const pc = peerConnections[message.senderId]; 
                     if (pc && message.candidate) {
                         pc.addIceCandidate(new RTCIceCandidate(message.candidate))
-                            .catch(e => console.error('[P2P] Erreur addIceCandidate (Hôte):', e));
+                            .catch(e => console.error('[P2P] addIceCandidate (Host) error:', e));
                     }
                  } 
                  else if (isTargetedToPeer) {
-                    // C'est l'hôte qui envoie, l'ID du PC est l'UUID de l'hôte
+                    // It's the Host sending, PC ID is the Host's UUID
                     const pc = peerConnections[localPlayer.hostId]; 
                     if (pc && message.candidate) {
                         pc.addIceCandidate(new RTCIceCandidate(message.candidate))
-                            .catch(e => console.error('[P2P] Erreur addIceCandidate (Pair):', e));
+                            .catch(e => console.error('[P2P] addIceCandidate (Peer) error:', e));
                     }
                  }
             }
             
-            // 5. Message d'erreur du serveur
+            // 5. Server Error Message
             else if (message.type === 'error') {
-                 showAlert(`Erreur Serveur: ${message.message}`);
-                 console.error(`[P2P] Erreur du serveur: ${message.message}`);
+                 showAlert(`Server Error: ${message.message}`);
+                 console.error(`[P2P] Server error: ${message.message}`);
             }
 
         } catch (e) {
-            console.error('[P2P] Erreur dans handleSignalingMessage:', e);
+            console.error('[P2P] Error in handleSignalingMessage:', e);
         }
     }
     
     /**
-     * @description Gère les messages reçus via les Data Channels (P2P).
+     * @description Handles messages received via Data Channels (P2P).
      */
     function handleP2PData(data, senderId) {
         switch (data.type) {
@@ -764,30 +793,30 @@
                 break;
                 
             case 'player_list_update':
-                // Reçu par tous les pairs de l'hôte pour mettre à jour la liste des joueurs
-                console.log("[P2P] Reçu mise à jour de la liste des joueurs:", data.players);
+                // Received by all peers from the host to update the player list
+                console.log("[P2P] Received player list update:", data.players);
                 
-                // Mettre à jour l'état local des joueurs
+                // Update local player state
                 connectedPlayers = data.players; 
                 
-                // S'assurer que les infos locales sont à jour (surtout la couleur)
-                if (connectedPlayers[localPlayer.id]) {
+                // Ensure local player info is up to date (especially color assigned by host)
+                if (connectedPlayers[localPlayer.id] && connectedPlayers[localPlayer.id].colorClass !== localPlayer.colorClass) {
                     localPlayer.colorClass = connectedPlayers[localPlayer.id].colorClass;
                     updateAccentColor();
                 }
                 
-                // Afficher la liste dans le lobby
+                // Display list in the lobby
                 if (gameState === GAME_STATES.LOBBY) {
                     updateLobbyPlayersDisplay(connectedPlayers);
                 }
                 break;
                 
             case 'game_state_update':
-                // Reçu par tous les pairs de l'hôte pour changer l'état du jeu
-                console.log("[P2P] Changement d'état de jeu reçu:", data.gameState);
+                // Received by all peers from the host to change game state
+                console.log("[P2P] Game state change received:", data.gameState);
                 if (data.gameState === GAME_STATES.IN_GAME) {
                     setGameState(GAME_STATES.IN_GAME);
-                    // Le pair active l'input
+                    // Peer activates input
                     $messageInput.disabled = false;
                     $sendButton.disabled = false;
                     $messageInput.focus();
@@ -795,7 +824,7 @@
                 break;
                 
             default:
-                console.log('[P2P] Donnée P2P inconnue:', data);
+                console.log('[P2P] Unknown P2P data:', data);
         }
     }
 
@@ -813,54 +842,52 @@
     function initializeLocalPlayer(isHost, code) {
         localPlayer.name = $modalNameInput.value.trim();
         localPlayer.isHost = isHost;
-        // La couleur du pair sera écrasée par l'hôte, mais l'hôte en a besoin
-        localPlayer.colorClass = assignRandomColor(); 
         localPlayer.hostCode = code;
         
-        // --- Étape CRUCIALE : Enregistrement auprès du serveur ---
+        // Host assigns its own color. Peer gets a temporary one (will be overwritten by host)
+        localPlayer.colorClass = assignRandomColor(); 
+        
+        // --- CRITICAL STEP: Register with server ---
         if (signalingSocket && signalingSocket.readyState === WebSocket.OPEN) {
             registerClient();
         } else {
-            // Le socket n'est pas ouvert, l'enregistrement sera fait dans onopen
-            connectSignalingServer();
+            connectSignalingServer(); // Registration happens in onopen
         }
 
-        // Ajouter le joueur local à la liste des joueurs connectés
+        // Add local player to the connected players list
         connectedPlayers[localPlayer.id] = { 
             id: localPlayer.id, 
-            name: localPlayer.name + ' (Vous)', 
+            name: localPlayer.name + (isHost ? ' (Hôte - Vous)' : ' (Vous)'), 
             colorClass: localPlayer.colorClass,
-            isConnected: false // Pas encore WebRTC connected
+            isConnected: isHost // Host is always connected to itself
         };
         
-        // Hôte est considéré connecté WebRTC à lui-même
         if (isHost) {
-            localPlayer.hostId = localPlayer.id; // L'hôte utilise son UUID pour les PC
-            connectedPlayers[localPlayer.id].isConnected = true; 
+            localPlayer.hostId = localPlayer.id; // Host uses its own UUID
         }
 
         updateDebugDisplay();
         updateAccentColor();
-        setGameState(GAME_STATES.LOBBY); // Passer à l'écran du lobby
+        setGameState(GAME_STATES.LOBBY); // Go to lobby screen
         
         $lobbyCodeDisplay.textContent = code;
         updateLobbyPlayersDisplay(connectedPlayers);
         $modal.classList.add('hidden');
     }
 
-    // --- ÉVÉNEMENTS ---
+    // --- EVENTS ---
 
     $modalNameInput.addEventListener('input', checkModalReadiness);
     $modalCodeInput.addEventListener('input', checkModalReadiness);
     
-    // 1. Bouton Hôte
+    // 1. Host Button
     $hostButton.onclick = () => {
         const hostCode = Array.from({ length: 6 }, () => Math.random().toString(36)[2].toUpperCase()).join('');
         initializeLocalPlayer(true, hostCode);
         showAlert(`Partie créée. Code de l'hôte: ${hostCode}`);
     };
 
-    // 2. Bouton Rejoindre
+    // 2. Join Button
     $joinButton.onclick = () => {
         const hostCode = $modalCodeInput.value.trim().toUpperCase();
         if (hostCode.length !== 6) return;
@@ -870,20 +897,20 @@
         
         const message = {
             type: 'join_request',
-            joinerId: localPlayer.id, // Mon UUID (pour que l'hôte sache qui envoyer l'Offer)
-            hostId: hostCode, // L'ID d'enregistrement de l'hôte sur le serveur
+            joinerId: localPlayer.id, // My UUID
+            hostId: hostCode, // Host's registration ID on the server
             joinerName: localPlayer.name,
-            joinerColorClass: localPlayer.colorClass, // Couleur temporaire pour l'hôte
+            joinerColorClass: localPlayer.colorClass, // Temp color for host
         };
         signalingSocket.send(JSON.stringify(message));
-        console.log(`[P2P] Envoyé la demande de jonction à l'hôte ${hostCode}`);
+        console.log(`[P2P] Sent join request to host ${hostCode}`);
     };
     
-    // 3. Bouton Démarrer la Partie (Hôte seulement)
+    // 3. Start Game Button (Host only)
     $startGameButton.onclick = () => {
         if (!localPlayer.isHost || gameState !== GAME_STATES.LOBBY || $startGameButton.disabled) return;
         
-        console.log("[JEU] Début de la partie demandé par l'hôte.");
+        console.log("[GAME] Game start requested by host.");
         setGameState(GAME_STATES.IN_GAME);
         
         const startGameMessage = {
@@ -891,24 +918,25 @@
             gameState: GAME_STATES.IN_GAME,
         };
         
-        // Diffuser à tous les pairs (y compris l'hôte, même si c'est local)
         broadcastData(startGameMessage);
         
-        // L'hôte active aussi son input
+        // Host also activates its input
         $messageInput.disabled = false;
         $sendButton.disabled = false;
         $messageInput.focus();
     };
 
-    // 4. Gestion de l'envoi de message dans le chat
+    // 4. Chat Message Send
     function handleMessageSend() {
         const messageText = $messageInput.value.trim();
         if (messageText.length > 0 && gameState === GAME_STATES.IN_GAME) {
             
-            // Vérifier qu'il y a au moins une connexion ouverte (l'hôte est toujours 'connecté')
-            if (Object.keys(dataChannels).length > 0 || localPlayer.isHost) {
+            // Check if there is at least one open connection (Host is always 'connected')
+            const hasOpenChannels = Object.keys(dataChannels).some(id => dataChannels[id].readyState === 'open');
+
+            if (localPlayer.isHost || hasOpenChannels) {
                 
-                addMessage(localPlayer.id, localPlayer.name, localPlayer.colorClass, messageText);
+                addMessage(localPlayer.id, localPlayer.name.replace(' (Vous)', ''), localPlayer.colorClass, messageText);
                 
                 const chatMessage = {
                     type: 'chat',
@@ -921,7 +949,7 @@
                 $messageInput.value = '';
                 $messageInput.focus();
             } else {
-                 showAlert("Erreur: Aucune connexion P2P ouverte pour envoyer le message.");
+                 showAlert("Error: No open P2P connections to send the message.");
             }
         }
     }
@@ -934,25 +962,25 @@
         }
     });
 
-    // --- INITIALISATION ---
+    // --- INITIALIZATION ---
 
     window.onload = () => {
-        // 1. Initialiser la connexion au serveur de signalisation
+        // 1. Initialize signaling server connection
         connectSignalingServer(); 
         
-        // 2. Initialiser la couleur d'accent par défaut (blanc)
+        // 2. Initialize default accent color (white)
         document.documentElement.style.setProperty('--accent-player', 'var(--color-accent-white)');
         
-        // 3. Afficher le minimum de joueurs pour le démarrage
+        // 3. Display min players for start
         $startMinCount.textContent = MIN_PLAYERS;
         
-        // 4. Focus sur l'input du modal
+        // 4. Focus on modal input
         $modalNameInput.focus();
         
-        // 5. Vérifier l'état initial des boutons
+        // 5. Check initial button readiness
         checkModalReadiness();
         
-        // 6. Démonstration de l'accumulation de points
+        // 6. Work points accumulation demo
         setInterval(() => {
             if (localPlayer.name && gameState === GAME_STATES.IN_GAME) { 
                 updateWorkPoints(localPlayer.workPoints + POINTS_PER_INTERVAL);
