@@ -3,1609 +3,354 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Épuisement Professionnel - WebRTC</title>
+    <title>Épuisement Professionnel - Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Configuration de la police Inter */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
-        
-        :root {
-            --player-color: #f3f4f6; /* Blanc/Gris clair par défaut */
-            --bg-dark: #1f2937; /* Gris ardoisé foncé */
-            --text-light: #f3f4f6; /* Texte clair */
-            --highlight-border: 2px solid var(--player-color);
-            --border-default: 1px solid #374151; /* Gris plus clair pour les séparations */
-        }
-
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-dark);
-            color: var(--text-light);
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-        }
-
-        /* Conteneur principal mobile-first */
-        #app-container {
-            width: 100%;
-            max-width: 500px; /* Max width for mobile-vertical focus */
-            height: 100vh;
+            background-color: #2F3640; /* Gris ardoise foncé pour le fond */
+            color: #EAECEF; /* Texte clair */
             display: flex;
             flex-direction: column;
-            padding: 0;
+            height: 100vh;
             margin: 0;
-            border-radius: 0;
-            overflow: hidden;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            padding: 0;
+            overflow: hidden; /* Empêche le défilement du corps */
         }
-
-        /* Header avec infos de jeu (Progression, Points, Timer) */
-        #game-header {
-            padding: 0.5rem 1rem;
-            background-color: #111827; /* Encore plus foncé */
-            border-bottom: var(--border-default);
-            flex-shrink: 0;
-        }
-
-        /* Barre de progression */
-        #progress-bar {
-            height: 10px;
-            width: 100%;
-            background-color: #374151;
-            border-radius: 5px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
-        }
-        #progress-fill {
-            height: 100%;
-            width: 0%;
-            background-color: #ffffff; /* Couleur blanche pour la progression */
-            transition: width 0.3s ease-out;
-            border-radius: 5px;
-        }
-
-        /* Conteneur du chat (seul élément défilant) */
-        #chat-messages {
+        #chat-container {
             flex-grow: 1;
             overflow-y: auto;
             padding: 1rem;
             display: flex;
             flex-direction: column;
-            gap: 10px;
-            /* Scrollbar style épuré */
-            scrollbar-width: thin;
-            scrollbar-color: #4b5563 #1f2937;
+            gap: 0.5rem;
+            /* Masque la barre de défilement pour un look plus propre */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
         }
-        #chat-messages::-webkit-scrollbar {
-            width: 8px;
+        #chat-container::-webkit-scrollbar {
+            display: none; /* Chrome, Safari, Opera */
         }
-        #chat-messages::-webkit-scrollbar-thumb {
-            background-color: #4b5563;
-            border-radius: 4px;
-        }
-
-        /* Styles des bulles de conversation */
         .message-bubble {
             max-width: 80%;
-            padding: 8px 12px;
-            border-radius: 15px;
+            padding: 0.5rem 0.75rem;
+            border-radius: 1.25rem; /* Coins arrondis */
             position: relative;
-            word-wrap: break-word;
         }
-        .player-name {
-            font-size: 0.7rem;
-            margin-bottom: 2px;
-            opacity: 0.8;
-            font-weight: 500;
-        }
-
-        /* Message du joueur actuel (droite) */
-        .message-right {
+        /* Message de l'utilisateur (à droite) */
+        .user-message {
+            background-color: #3F72AF; /* Couleur d'accent bleu/foncé */
             align-self: flex-end;
-            background-color: #4c688b; /* Bleu/couleur du joueur un peu plus foncé */
-            border-bottom-right-radius: 2px;
-            
+            border-bottom-right-radius: 0.25rem;
         }
-        .message-right .player-name {
-            text-align: right;
-        }
-
-        /* Message des autres joueurs (gauche) */
-        .message-left {
+        /* Message des autres (à gauche) */
+        .other-message {
+            background-color: #495057; /* Gris un peu plus clair que le fond */
             align-self: flex-start;
-            background-color: #374151; 
-            border-bottom-left-radius: 2px;
+            border-bottom-left-radius: 0.25rem;
         }
-
-        /* Message du Patron (centre) */
-        .message-boss {
-            align-self: center;
-            background-color: #0d1624; /* Très foncé, presque noir */
-            color: #d1d5db;
-            border-radius: 15px 15px 15px 15px;
-            font-style: italic;
-            text-align: center;
+        .header-bar {
+            background-color: #262D34; /* Barre d'en-tête */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
         }
-        .message-boss .player-name {
-            color: #9ca3af; /* Gris clair */
-        }
-
-        /* Surlignage d'un message d'appel à l'aide */
-        .highlighted-work {
-            border: 2px solid yellow;
-            padding: 10px;
-            margin: 5px 0;
-            box-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
-            animation: pulse-yellow 1.5s infinite;
-        }
-
-        @keyframes pulse-yellow {
-            0% { box-shadow: 0 0 0 rgba(255, 255, 0, 0.7); }
-            70% { box-shadow: 0 0 10px rgba(255, 255, 0, 0.7); }
-            100% { box-shadow: 0 0 0 rgba(255, 255, 0, 0.7); }
-        }
-
-        /* Conteneur de la zone de saisie */
-        #input-container {
-            flex-shrink: 0;
-            padding: 0.75rem;
-            background-color: #111827;
-            border-top: var(--border-default);
-        }
-
-        /* Indicateur d'interaction */
-        #interaction-prompt {
-            min-height: 20px; /* Garder un espace pour éviter le CLS */
-            padding: 0.25rem 0;
-            color: var(--player-color);
-            font-size: 0.85rem;
-            font-weight: 600;
-            text-align: center;
-            transition: color 0.3s;
-        }
-
-        #message-input:focus {
-            outline: none;
-            box-shadow: 0 0 0 2px var(--player-color);
-        }
-        
-        /* Animation d'échec/réussite */
-        .flash-success {
-            animation: flash-green 0.5s ease-out;
-        }
-        .flash-failure {
-            animation: flash-red 0.5s ease-out;
-        }
-        @keyframes flash-green {
-            0% { background-color: var(--bg-dark); }
-            50% { background-color: #10b981; } /* Vert émeraude */
-            100% { background-color: var(--bg-dark); }
-        }
-        @keyframes flash-red {
-            0% { background-color: var(--bg-dark); }
-            50% { background-color: #ef4444; } /* Rouge */
-            100% { background-color: var(--bg-dark); }
+        .input-area {
+            background-color: #262D34; /* Zone de saisie */
         }
     </style>
 </head>
-<body class="bg-gray-900">
+<body>
 
-    <div id="app-container">
-        
-        <!-- HEADER (Affichage des métriques de jeu) -->
-        <div id="game-header">
-            <div id="progress-bar">
-                <div id="progress-fill"></div>
-            </div>
-            <div class="flex justify-between items-center text-xs mt-1">
-                <div id="timer-display" class="font-bold text-gray-400">Timer: --:--</div>
-                <div id="work-points-display" class="font-extrabold text-white" style="color: var(--player-color);">
-                    Points: 0
-                </div>
-            </div>
+    <!-- Barre de Progression et Score (Mockup selon la description) -->
+    <header class="header-bar p-3">
+        <!-- Ligne 1: Barre de progression (Objectif de manche) -->
+        <div class="h-2 w-full bg-white rounded-full mb-2 overflow-hidden">
+            <!-- Remplissage de la barre (ex: 50% de progression) -->
+            <div id="progress-bar-fill" class="h-full bg-green-400" style="width: 50%;"></div>
         </div>
-        
-        <!-- CHAT (Zone principale du jeu) -->
-        <div id="chat-messages" class="flex flex-col-reverse">
-            <!-- Les messages seront insérés ici par JS, utilisant flex-col-reverse pour afficher le nouveau message en bas -->
-        </div>
-
-        <!-- POPUP POUR L'INVESTISSEMENT DE POINTS (Invisible par défaut) -->
-        <div id="invest-popup" class="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50 hidden">
-            <div class="bg-gray-700 p-6 rounded-lg shadow-2xl w-11/12 max-w-sm border-2" style="border-color: var(--player-color);">
-                <h3 class="text-xl font-bold mb-3 text-center">Investir dans la Tâche</h3>
-                <p class="text-sm text-gray-300 mb-4 text-center">
-                    Combien de points de travail investissez-vous ?
-                    <br>
-                    <span id="invest-max-info" class="font-semibold text-white"></span>
-                </p>
-                <input type="number" id="invest-input" min="1" class="w-full p-2 rounded bg-gray-800 text-white border-2 border-gray-600 focus:border-white text-center text-lg" placeholder="1 - Max">
-                <div class="mt-4 flex justify-end">
-                    <button id="invest-submit" class="px-4 py-2 font-semibold rounded" style="background-color: var(--player-color); color: var(--bg-dark);">Confirmer</button>
-                </div>
+        <!-- Ligne 2: Compteurs -->
+        <div class="flex justify-between items-center text-sm">
+            <!-- Compte à rebours -->
+            <div id="countdown" class="text-white">Temps restant: 03:45</div>
+            <!-- Compteur de points de travail du joueur -->
+            <div id="work-points" class="font-bold p-1 rounded-lg" style="background-color: #FFFFFF; color: #2F3640;">
+                Points de Travail: <span class="font-mono">120</span>
             </div>
         </div>
+    </header>
 
-        <!-- ZONE DE SAISIE -->
-        <div id="input-container">
-            <div id="interaction-prompt"></div>
-            <form id="message-form" class="flex gap-2">
-                <input type="text" id="message-input" autocomplete="off" 
-                       class="flex-grow p-2 rounded-lg bg-gray-800 border-2 border-gray-600 transition-shadow duration-200"
-                       style="box-shadow: 0 0 0 2px var(--player-color);"
-                       placeholder="Écrivez ici...">
-                <button type="submit" class="px-4 py-2 rounded-lg font-bold" 
-                        style="background-color: var(--player-color); color: var(--bg-dark);">
-                    Envoyer
-                </button>
-            </form>
-        </div>
-
+    <!-- Conteneur de la Conversation -->
+    <div id="chat-container">
+        <!-- Les messages seront ajoutés ici par JavaScript -->
     </div>
-    
-    <script>
-        // ====================================================================================
-        // CONFIGURATION ET VARIABLES GLOBALES
-        // ====================================================================================
 
-        // L'URL de votre serveur de signalisation sur Render (à remplacer si vous changez de nom)
-        const SIGNALING_SERVER_URL = "wss://webrtc-epuisement-professionnel.onrender.com";
-        
-        // Serveurs STUN gratuits pour la traversée NAT
-        const ICE_SERVERS = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun.services.mozilla.com' },
-            ]
+    <!-- Zone de Saisie de Message -->
+    <div class="input-area p-3 flex gap-2 border-t border-gray-700">
+        <input type="text" id="message-input" placeholder="Écrivez votre message..."
+               class="flex-grow p-3 rounded-full bg-gray-600 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400 transition shadow-lg">
+        <button id="send-button"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full transition duration-150 shadow-md">
+            Envoyer
+        </button>
+    </div>
+
+    <!-- Scripts Firebase -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import {
+            getAuth, signInAnonymously, signInWithCustomToken,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import {
+            getFirestore, doc, onSnapshot, collection, query, orderBy,
+            addDoc, serverTimestamp, getDocs, limit
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Variables Globales Fournies par Canvas ---
+        // Sécurité contre la non-déclaration des variables par l'environnement
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth, currentUserId;
+
+        // --- Références DOM ---
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+
+        // --- Données Mockup (à remplacer par la logique réelle du jeu) ---
+        // Ceci est un mockup pour tester l'affichage des couleurs
+        const playerColors = {
+            // L'utilisateur actuel est simulé comme 'user-123'
+            'user-123': { name: "Joueur Alpha", color: "#FF6347" }, // Rouge clair
+            'patrone': { name: "Patron(e)", color: "#FFFFFF" }, // Blanc pour la Patronne
+            'player-456': { name: "Béta", color: "#7F00FF" }, // Mauve clair
+            'player-789': { name: "Gamma", color: "#3CB371" }  // Vert clair
         };
 
-        // Liste des couleurs disponibles (pâles pour fond sombre)
-        const COLORS = [
-            { name: "Rouge", hex: "#f87171" },       // Rouge pâle
-            { name: "Orange", hex: "#fb923c" },      // Orange pâle
-            { name: "Bleu", hex: "#60a5fa" },        // Bleu ciel
-            { name: "Mauve", hex: "#a78bfa" },       // Mauve clair
-            { name: "Vert", hex: "#4ade80" },        // Vert pâle
-            { name: "Rose", hex: "#f472b6" },        // Rose clair
-            { name: "Turquoise", hex: "#2dd4bf" },   // Turquoise clair
-            { name: "Jaune", hex: "#facc15" }        // Jaune
-        ];
+        // --- Fonctions Firestore ---
 
-        // Tâches et objectifs par manche
-        const MANCHE_DATA = [
-            { name: "Rapport", unit: "pages", basePoints: 200, bonus: 50, scoreTargetPct: 0.70 }, // Manche 1
-            { name: "PowerPoint", unit: "diapositives", basePoints: 220, bonus: 55, scoreTargetPct: 0.75 }, // Manche 2 (200 + 10%)
-            { name: "Publicité", unit: "vues", basePoints: 242, bonus: 60.5, scoreTargetPct: 0.80 } // Manche 3 (220 + 10%)
-        ];
+        /**
+         * Construit la référence de la collection de chat public.
+         * @param {object} firestore Instance de Firestore.
+         * @returns {object} Référence à la collection de messages.
+         */
+        function getChatCollectionRef(firestore) {
+            // Chemin de la collection publique pour le chat de groupe :
+            // /artifacts/{appId}/public/data/messages
+            return collection(firestore, `artifacts/${appId}/public/data/messages`);
+        }
 
-        // La variable qui détermine le gain de points de travail
-        const WORK_POINTS_PER_10_SECONDS = 10;
-        const MANCHE_DURATION_SECONDS = 15 * 60; // 15 minutes
-        
-        // État du jeu et du joueur
-        let gameState = {
-            status: 'LOBBY', // LOBBY, WAITING_HOST_START, GAME_IN_PROGRESS, VOTE_FENEANT, VOTE_EMPLOYE
-            isHost: false,
-            localPlayerId: null,
-            playerName: '',
-            playerColor: '#f3f4f6', // Gris par défaut
-            workPoints: 0,
-            roomID: null,
-            players: {}, // { id: { name, color, totalScore, currentRoundScore } }
-            peerConnections: {}, // { id: RTCPeerConnection }
-            dataChannels: {}, // { id: RTCDataChannel }
-            chatLog: [],
-            currentManche: 0, // 0 = non commencé, 1, 2, 3
-            mancheGoal: 0,
-            mancheCurrentScore: 0,
-            mancheTimer: MANCHE_DURATION_SECONDS,
-            workPointInterval: null,
-            mancheTimeout: null,
-            // Variables de logique d'interaction
-            awaitingResponse: null, // Quelque chose comme { type: 'NAME', target: null } ou { type: 'YES_NO', target: 'workID' }
-            // Variables de travail d'équipe
-            currentWork: null, // { workID, initiatorID, requiredPlayers: { ID: response? } }
-        };
-
-        // État du WebSocket
-        let ws = null;
-        
-        // Références DOM
-        const D = {
-            appContainer: document.getElementById('app-container'),
-            chatMessages: document.getElementById('chat-messages'),
-            messageInput: document.getElementById('message-input'),
-            messageForm: document.getElementById('message-form'),
-            interactionPrompt: document.getElementById('interaction-prompt'),
-            workPointsDisplay: document.getElementById('work-points-display'),
-            timerDisplay: document.getElementById('timer-display'),
-            progressBarFill: document.getElementById('progress-fill'),
-            investPopup: document.getElementById('invest-popup'),
-            investInput: document.getElementById('invest-input'),
-            investMaxInfo: document.getElementById('invest-max-info'),
-            investSubmit: document.getElementById('invest-submit'),
-        };
-
-        // ====================================================================================
-        // UTILS
-        // ====================================================================================
-
-        /** Génère un ID unique simple */
-        const generateID = (prefix = 'id') => prefix + Math.random().toString(36).substring(2, 9);
-
-        /** Trouve un joueur par son nom (sensible à la casse pour plus de sécurité) */
-        const findPlayerByName = (name) => {
-            const playersArray = Object.values(gameState.players);
-            return playersArray.find(p => p.name.toLowerCase() === name.toLowerCase());
-        };
-
-        /** Met à jour les éléments visuels du joueur (couleur, points) */
-        const updateUI = () => {
-            document.documentElement.style.setProperty('--player-color', gameState.playerColor);
-            D.workPointsDisplay.textContent = `Points: ${gameState.workPoints}`;
-            
-            // Mise à jour de la barre de progression (uniquement en jeu)
-            if (gameState.status === 'GAME_IN_PROGRESS' && gameState.mancheGoal > 0) {
-                const percentage = Math.min(100, (gameState.mancheCurrentScore / gameState.mancheGoal) * 100);
-                D.progressBarFill.style.width = `${percentage}%`;
-            } else {
-                D.progressBarFill.style.width = '0%';
-            }
-        };
-
-        /** Affiche un message dans le chat */
-        const appendMessage = (data) => {
-            const isLocal = data.senderId === gameState.localPlayerId;
-            const isBoss = data.senderId === 'BOSS';
-            const player = gameState.players[data.senderId];
-            const senderName = isBoss ? 'Patronne' : (player ? player.name : 'Inconnu');
-            const senderColor = isBoss ? '#9ca3af' : (player ? player.color : gameState.playerColor);
-
-            const div = document.createElement('div');
-            div.className = `message-bubble mt-2 text-sm ${isBoss ? 'message-boss' : (isLocal ? 'message-right' : 'message-left')}`;
-            
-            // Si ce n'est pas le patron, ajoute le nom et la couleur
-            if (!isBoss) {
-                const nameSpan = document.createElement('div');
-                nameSpan.className = 'player-name';
-                nameSpan.textContent = senderName;
-                nameSpan.style.color = senderColor;
-                div.appendChild(nameSpan);
-            } else {
-                const nameSpan = document.createElement('div');
-                nameSpan.className = 'player-name';
-                nameSpan.textContent = 'Patronne';
-                nameSpan.style.color = '#fff';
-                div.appendChild(nameSpan);
-            }
-
-            // Remplace les noms de joueurs dans le corps du message avec leur couleur
-            let contentHTML = data.text;
-            Object.values(gameState.players).forEach(p => {
-                const regex = new RegExp(`(${p.name})`, 'gi');
-                contentHTML = contentHTML.replace(regex, `<span style="color: ${p.color}; font-weight: bold;">$1</span>`);
-            });
-
-            const textNode = document.createElement('span');
-            textNode.innerHTML = contentHTML;
-            div.appendChild(textNode);
-            
-            // Si le message est un appel au travail pour le joueur local (et pas l'initiateur)
-            if (data.workID && data.senderId !== gameState.localPlayerId) {
-                const work = gameState.currentWork;
-                if (work && work.requiredPlayers && work.requiredPlayers[gameState.localPlayerId] === 'WAITING') {
-                    div.classList.add('highlighted-work');
-                }
-            }
-
-            D.chatMessages.prepend(div); // Ajoute en haut pour flex-col-reverse
-            gameState.chatLog.push(data);
-        };
-        
-        /** Efface tous les messages du chat */
-        const clearChat = () => {
-            D.chatMessages.innerHTML = '';
-            gameState.chatLog = [];
-        };
-
-        // ====================================================================================
-        // GESTION DU JEU (LOGIQUE HOST)
-        // ====================================================================================
-
-        /** Démarre le gain automatique de points de travail */
-        const startWorkPointInterval = () => {
-            if (gameState.workPointInterval) clearInterval(gameState.workPointInterval);
-            gameState.workPointInterval = setInterval(() => {
-                gameState.workPoints += WORK_POINTS_PER_10_SECONDS;
-                updateUI();
-                // Si l'hôte, synchronise l'état des points (moins souvent, toutes les 50s)
-                if (gameState.isHost && gameState.workPoints % 50 === 0) {
-                    sendDataToAllPeers({ type: 'UPDATE_POINTS', senderId: gameState.localPlayerId, workPoints: gameState.workPoints });
-                }
-            }, 10000); // 10 secondes
-        };
-
-        /** Démarre le compte à rebours de la manche */
-        const startMancheTimer = () => {
-            D.timerDisplay.textContent = `Timer: ${formatTime(gameState.mancheTimer)}`;
-            if (gameState.mancheTimeout) clearTimeout(gameState.mancheTimeout);
-            
-            const tick = () => {
-                if (gameState.mancheTimer <= 0) {
-                    endManche(false); // Temps écoulé, objectif non atteint
-                    return;
-                }
-                gameState.mancheTimer--;
-                D.timerDisplay.textContent = `Timer: ${formatTime(gameState.mancheTimer)}`;
-
-                // Synchronisation de l'hôte (toutes les secondes)
-                if (gameState.isHost) {
-                    sendDataToAllPeers({ type: 'UPDATE_TIMER', timer: gameState.mancheTimer });
-                }
-
-                gameState.mancheTimeout = setTimeout(tick, 1000);
-            };
-
-            gameState.mancheTimeout = setTimeout(tick, 1000);
-        };
-
-        /** Formate les secondes en MM:SS */
-        const formatTime = (totalSeconds) => {
-            const minutes = Math.floor(totalSeconds / 60);
-            const seconds = totalSeconds % 60;
-            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        };
-
-        /** Logique d'initialisation de la manche (Hôte seulement) */
-        const startManche = () => {
-            if (!gameState.isHost) return;
-
-            gameState.currentManche++;
-            if (gameState.currentManche > 3) {
-                endGame();
+        /**
+         * Formate un message et l'ajoute à Firestore.
+         * @param {string} text Le texte du message.
+         */
+        async function sendMessage(text) {
+            if (!currentUserId || text.trim() === "") {
+                console.warn("Utilisateur non authentifié ou message vide.");
                 return;
             }
 
-            // Réinitialisation de l'état
-            clearChat();
-            gameState.players = Object.fromEntries(Object.entries(gameState.players).map(([id, player]) => [id, { ...player, currentRoundScore: 0 }]));
-            gameState.mancheCurrentScore = 0;
-            gameState.mancheTimer = MANCHE_DURATION_SECONDS;
-            gameState.gameState = 'GAME_IN_PROGRESS';
-            gameState.awaitingResponse = { type: 'CONFIRM_READY', target: null };
-            
-            const manche = MANCHE_DATA[gameState.currentManche - 1];
-            const playerCount = Object.keys(gameState.players).length;
+            const senderInfo = playerColors[currentUserId] || { name: `Utilisateur ${currentUserId.substring(0, 4)}`, color: "#EAECEF" };
 
-            // Calcul de l'objectif
-            // Points distribués = (15 minutes * 60 secondes / 10 secondes) * WORK_POINTS_PER_10_SECONDS * playerCount
-            const totalWorkPointsInRound = (MANCHE_DURATION_SECONDS / 10) * WORK_POINTS_PER_10_SECONDS * playerCount;
-            gameState.mancheGoal = Math.round(totalWorkPointsInRound * manche.scoreTargetPct);
-            
-            // Message du patron
-            const bossMsg = {
-                type: 'CHAT', senderId: 'BOSS',
-                text: `Bienvenue pour la Manche ${gameState.currentManche} ! Notre objectif collectif est de terminer **${gameState.mancheGoal}** ${manche.unit} de **${manche.name}** ! Confirmez-moi que vous êtes prêts !`
+            const message = {
+                senderId: currentUserId,
+                senderName: senderInfo.name,
+                text: text.trim(),
+                timestamp: serverTimestamp(),
+                color: senderInfo.color
             };
 
-            sendDataToAll({ type: 'START_MANCHE', mancheIndex: gameState.currentManche, goal: gameState.mancheGoal, players: gameState.players, bossMsg });
-        };
-
-        /** Logique de fin de manche (Hôte seulement) */
-        const endManche = (objectiveReached) => {
-            if (!gameState.isHost) return;
-            
-            if (gameState.mancheTimeout) clearTimeout(gameState.mancheTimeout);
-            if (gameState.workPointInterval) clearInterval(gameState.workPointInterval);
-            
-            gameState.gameState = 'VOTE_FENEANT'; // Prochaine étape
-            
-            // 1. Gérer les scores (seulement si l'objectif N'EST PAS atteint)
-            let bossMsgText = '';
-            if (!objectiveReached) {
-                bossMsgText += "Malheureusement, l'objectif n'a **PAS** été atteint. Je suis déçue de cette performance collective. ";
-                
-                // Logique d'égalisation et d'échange de points
-                let richestPlayerId = null;
-                let richestScore = -Infinity;
-                let poorestPlayerId = null;
-                let poorestScore = Infinity;
-
-                Object.entries(gameState.players).forEach(([id, player]) => {
-                    if (player.workPoints > richestScore) {
-                        richestScore = player.workPoints;
-                        richestPlayerId = id;
-                    }
-                    if (player.workPoints < poorestScore) {
-                        poorestScore = player.workPoints;
-                        poorestPlayerId = id;
-                    }
-                });
-
-                // Égaliser tous les scores au score du joueur le plus pauvre
-                Object.keys(gameState.players).forEach(id => {
-                    gameState.players[id].workPoints = poorestScore;
-                });
-                
-                // Attribuer le score du plus riche à l'ancien plus pauvre
-                if (poorestPlayerId) {
-                    gameState.players[poorestPlayerId].workPoints = richestScore;
-                }
-                
-            } else {
-                bossMsgText += "Félicitations, l'objectif a été **ATTEINT** ! Excellent travail d'équipe. ";
-            }
-
-            // 2. Afficher les scores anonymisés (pour tous les joueurs)
-            const scores = Object.values(gameState.players).map(p => p.workPoints).sort((a, b) => b - a);
-            bossMsgText += `\n\nVoici les scores anonymisés de fin de manche : **[${scores.join(', ')}]**`;
-            
-            const bossMsg = { type: 'CHAT', senderId: 'BOSS', text: bossMsgText };
-            sendDataToAll({ type: 'END_MANCHE', objectiveReached, bossMsg, players: gameState.players });
-        };
-
-        /** Logique de fin de partie (Hôte seulement) */
-        const endGame = () => {
-            if (!gameState.isHost) return;
-            
-            if (gameState.workPointInterval) clearInterval(gameState.workPointInterval);
-            
-            gameState.status = 'GAME_OVER';
-
-            let winner = Object.values(gameState.players).reduce((prev, current) => (prev.workPoints > current.workPoints) ? prev : current);
-
-            const bossMsgText = `Félicitations **${winner.name}** ! Avec **${winner.workPoints}** points, vous obtenez une promotion et gagnez la partie !\n\nVoulez-vous rejouer ? (Tapez "rejouer" pour relancer le lobby)`;
-            const bossMsg = { type: 'CHAT', senderId: 'BOSS', text: bossMsgText };
-
-            sendDataToAll({ type: 'END_GAME', bossMsg, winnerName: winner.name });
-        };
-
-        /** Logique de traitement des travaux (Hôte seulement) */
-        const processWorkRequest = (data) => {
-            if (!gameState.isHost) return;
-
-            const { initiatorID, workID, text } = data;
-            const manche = MANCHE_DATA[gameState.currentManche - 1];
-            
-            // 1. Parser les noms
-            const workRegex = new RegExp(`${manche.name}\\s*avec\\s*([a-zA-Z,\\s]*)`, 'i');
-            const match = text.match(workRegex);
-            
-            if (!match) return; // Pas un format de travail valide
-            
-            const invitedNames = match[1].split(',').map(n => n.trim()).filter(n => n.length > 0);
-            
-            // Ajouter l'initiateur à la liste des participants
-            const requiredPlayers = { [initiatorID]: 'ACCEPTED' };
-            const invitedIDs = [];
-            let validRequest = true;
-
-            invitedNames.forEach(name => {
-                const player = findPlayerByName(name);
-                if (player && player.id !== initiatorID) {
-                    requiredPlayers[player.id] = 'WAITING';
-                    invitedIDs.push(player.id);
-                }
-            });
-
-            // 2. Vérifier les conditions minimales
-            const playerCount = Object.keys(requiredPlayers).length;
-            if (playerCount < 2) {
-                sendDataToPeer(initiatorID, { type: 'CHAT', senderId: 'BOSS', text: "Le travail d'équipe est vital ! Vous devez collaborer avec au moins une autre personne." });
-                return;
-            }
-
-            // 3. Vérifier les points de l'initiateur
-            const maxBid = manche.basePoints / playerCount;
-            if (gameState.players[initiatorID].workPoints < maxBid) {
-                sendDataToPeer(initiatorID, { type: 'CHAT', senderId: 'BOSS', text: "Vous n'avez pas assez de points de travail pour couvrir votre part de la mise maximale. Accumulez plus de points avant de proposer ce travail." });
-                return;
-            }
-            
-            // 4. Initialiser la tâche
-            gameState.currentWork = {
-                workID,
-                initiatorID,
-                workName: manche.name,
-                requiredPlayers, // { ID: 'WAITING' | 'ACCEPTED' | 'REJECTED' }
-                maxBid,
-                bids: { [initiatorID]: null } // Bid de l'initiateur sera demandé au moment de l'acceptation finale
-            };
-            
-            // 5. Demander la réponse aux coéquipiers
-            const inviteMsg = {
-                type: 'WORK_INVITE',
-                senderId: initiatorID,
-                workID,
-                text: `${gameState.players[initiatorID].name} vous demande de faire un(e) ${manche.name} avec lui ! (Répondez OUI ou NON)`
-            };
-
-            sendDataToAll({ type: 'CHAT', ...inviteMsg });
-            
-            // Demander au joueur invité de répondre OUI/NON
-            invitedIDs.forEach(id => {
-                sendDataToPeer(id, { type: 'AWAIT_RESPONSE', interaction: { type: 'YES_NO', target: workID } });
-            });
-            // L'initiateur attend aussi la fin
-            sendDataToPeer(initiatorID, { type: 'AWAIT_RESPONSE', interaction: { type: 'WAITING_FOR_TEAM', target: workID } });
-        };
-        
-        /** Traite la réponse OUI/NON à une invitation de travail (Hôte seulement) */
-        const processWorkResponse = (senderID, response) => {
-            if (!gameState.isHost || !gameState.currentWork || gameState.currentWork.requiredPlayers[senderID] !== 'WAITING') return;
-
-            const work = gameState.currentWork;
-            
-            if (response.toUpperCase() === 'OUI') {
-                // 1. Vérifier si le joueur a assez de points pour la mise max
-                if (gameState.players[senderID].workPoints < work.maxBid) {
-                    sendDataToPeer(senderID, { type: 'CHAT', senderId: 'BOSS', text: "Vous vouliez accepter, mais vous n'avez pas assez de points pour couvrir la mise maximale. Accumulez plus de points !" });
-                    work.requiredPlayers[senderID] = 'REJECTED';
-                    sendDataToAll({ type: 'CHAT', senderId: senderID, text: 'Non, désolé(e), je ne peux pas collaborer.' });
-                } else {
-                    work.requiredPlayers[senderID] = 'ACCEPTED';
-                    sendDataToAll({ type: 'CHAT', senderId: senderID, text: 'Oui, je suis partant(e) pour collaborer !' });
-                }
-            } else if (response.toUpperCase() === 'NON') {
-                work.requiredPlayers[senderID] = 'REJECTED';
-                sendDataToAll({ type: 'CHAT', senderId: senderID, text: 'Non, désolé(e), je ne peux pas collaborer.' });
-            }
-
-            // Vérifier si toutes les réponses sont là
-            if (Object.values(work.requiredPlayers).every(status => status !== 'WAITING')) {
-                finalizeWorkTeam();
-            }
-        };
-
-        /** Finalise l'équipe de travail et demande l'investissement de points (Hôte seulement) */
-        const finalizeWorkTeam = () => {
-            if (!gameState.isHost) return;
-
-            const work = gameState.currentWork;
-            const acceptedPlayers = Object.entries(work.requiredPlayers)
-                .filter(([, status]) => status === 'ACCEPTED')
-                .map(([id]) => id);
-            
-            if (acceptedPlayers.length < 2) {
-                // Échec de la formation d'équipe
-                sendDataToAll({ type: 'CHAT', senderId: 'BOSS', text: "Échec de la collaboration. Le travail a été annulé." });
-                gameState.currentWork = null;
-                // Redonne le contrôle du chat à tous
-                Object.keys(gameState.players).forEach(id => sendDataToPeer(id, { type: 'AWAIT_RESPONSE', interaction: { type: 'CHAT', target: null } }));
-                return;
-            }
-
-            // Équipe formée, demande l'investissement
-            work.acceptedPlayers = acceptedPlayers;
-            work.bids = {}; // Réinitialise les bids pour n'inclure que les joueurs acceptés
-            
-            const playerNames = acceptedPlayers.map(id => gameState.players[id].name).join(', ');
-            sendDataToAll({ type: 'CHAT', senderId: 'BOSS', text: `L'équipe **${playerNames}** est formée ! Préparez-vous à investir vos points de travail.` });
-
-            acceptedPlayers.forEach(id => {
-                sendDataToPeer(id, { 
-                    type: 'AWAIT_RESPONSE', 
-                    interaction: { type: 'INVEST_POINTS', target: work.workID, maxBid: work.maxBid } 
-                });
-            });
-        };
-
-        /** Traite l'investissement des points et calcule le succès (Hôte seulement) */
-        const processInvestResponse = (senderID, bidAmount) => {
-            if (!gameState.isHost || !gameState.currentWork || !gameState.currentWork.acceptedPlayers.includes(senderID)) return;
-            
-            const work = gameState.currentWork;
-            const bid = parseInt(bidAmount, 10);
-
-            // Validation de la mise
-            if (bid < 1 || bid > work.maxBid || bid > gameState.players[senderID].workPoints) {
-                // Le joueur triche ou le jeu est désynchronisé, on ignore
-                sendDataToPeer(senderID, { type: 'CHAT', senderId: 'BOSS', text: "Erreur de mise. Veuillez réessayer. La mise doit être entre 1 et votre maximum de points de travail." });
-                return;
-            }
-
-            work.bids[senderID] = bid;
-            
-            // Vérifier si tous les joueurs acceptés ont misé
-            const allBidsReceived = work.acceptedPlayers.every(id => work.bids.hasOwnProperty(id));
-            
-            if (allBidsReceived) {
-                resolveWork();
-            }
-        };
-
-        /** Résolution du travail (Hôte seulement) */
-        const resolveWork = () => {
-            if (!gameState.isHost) return;
-
-            const work = gameState.currentWork;
-            const manche = MANCHE_DATA[gameState.currentManche - 1];
-            const playerCount = work.acceptedPlayers.length;
-            
-            // Calcul des points
-            const totalMaxPoints = work.maxBid * playerCount; // Ex: 100 * 4 = 400
-            const totalBidPoints = Object.values(work.bids).reduce((sum, bid) => sum + bid, 0);
-
-            // Calcul de la productivité et de la valeur de la tâche
-            const baseValue = manche.basePoints + (playerCount - 2) * manche.bonus;
-            
-            // Chance de réussite
-            const successChance = totalBidPoints / totalMaxPoints; // Entre 0 et 1
-
-            // Déduction des points de travail
-            work.acceptedPlayers.forEach(id => {
-                const bid = work.bids[id];
-                gameState.players[id].workPoints -= bid;
-                // Envoie la mise à jour des points de travail au joueur pour synchronisation immédiate
-                sendDataToPeer(id, { type: 'UPDATE_POINTS', senderId: id, workPoints: gameState.players[id].workPoints });
-            });
-
-            // Résultat aléatoire
-            const isSuccess = Math.random() < successChance;
-
-            if (isSuccess) {
-                // Succès : ajout des points à la manche
-                gameState.mancheCurrentScore += baseValue;
-                
-                const bossMsg = { type: 'CHAT', senderId: 'BOSS', text: `Tâche **${manche.name}** Réussie ! (Prod: +${baseValue} ${manche.unit}, Chance: ${Math.round(successChance * 100)}%)` };
-                sendDataToAll({ type: 'WORK_RESULT', result: 'SUCCESS', scoreAdded: baseValue, bossMsg, newMancheScore: gameState.mancheCurrentScore });
-                
-                // Vérifier si l'objectif est atteint
-                if (gameState.mancheCurrentScore >= gameState.mancheGoal) {
-                    endManche(true);
-                }
-            } else {
-                // Échec : pas de points, animation rouge
-                const bossMsg = { type: 'CHAT', senderId: 'BOSS', text: `Tâche **${manche.name}** Échouée ! (Prod: +0 ${manche.unit}, Chance: ${Math.round(successChance * 100)}%)` };
-                sendDataToAll({ type: 'WORK_RESULT', result: 'FAILURE', scoreAdded: 0, bossMsg, newMancheScore: gameState.mancheCurrentScore });
-            }
-            
-            // Fin de la tâche, redonne le contrôle à tous
-            gameState.currentWork = null;
-            Object.keys(gameState.players).forEach(id => sendDataToPeer(id, { type: 'AWAIT_RESPONSE', interaction: { type: 'CHAT', target: null } }));
-        };
-
-        // ====================================================================================
-        // GESTION DES PEERS (Connexion P2P)
-        // ====================================================================================
-
-        /** Crée un objet RTCPeerConnection */
-        const createPeerConnection = (peerId) => {
-            const pc = new RTCPeerConnection(ICE_SERVERS);
-            
-            // 1. Gestion du Data Channel (pour les données de jeu)
-            if (gameState.isHost) {
-                // Hôte crée le Data Channel
-                const dataChannel = pc.createDataChannel("gameData");
-                dataChannel.onopen = () => { 
-                    console.log(`[P2P] DataChannel open with ${peerId}`);
-                    gameState.dataChannels[peerId] = dataChannel;
-                };
-                dataChannel.onmessage = (event) => handleP2PMessage(peerId, event.data);
-                dataChannel.onclose = () => { console.log(`[P2P] DataChannel closed with ${peerId}`); delete gameState.dataChannels[peerId]; };
-            } else {
-                // Joueur écoute la création du Data Channel par l'hôte
-                pc.ondatachannel = (event) => {
-                    const dataChannel = event.channel;
-                    dataChannel.onopen = () => { 
-                        console.log(`[P2P] DataChannel open with Host`);
-                        gameState.dataChannels[peerId] = dataChannel;
-                        // Prêt à jouer !
-                    };
-                    dataChannel.onmessage = (event) => handleP2PMessage(peerId, event.data);
-                    dataChannel.onclose = () => { console.log(`[P2P] DataChannel closed with Host`); delete gameState.dataChannels[peerId]; };
-                };
-            }
-
-            // 2. Échange des candidats ICE via le serveur de signalisation
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    sendSignalingMessage({
-                        type: 'ICE_CANDIDATE',
-                        targetId: peerId,
-                        candidate: event.candidate,
-                        roomID: gameState.roomID
-                    });
-                }
-            };
-
-            // 3. Gestion de l'état de la connexion (pour le debug)
-            pc.onconnectionstatechange = (event) => {
-                console.log(`[P2P] Connexion state change with ${peerId}: ${pc.connectionState}`);
-                if (pc.connectionState === 'connected') {
-                     // L'hôte peut maintenant dire que le joueur est bien connecté
-                    if(gameState.isHost) {
-                        const player = gameState.players[peerId];
-                        appendMessage({ senderId: 'BOSS', text: `**${player.name}** a rejoint la partie ! (${Object.keys(gameState.dataChannels).length + 1} joueurs connectés)` });
-                    }
-                }
-            };
-
-            gameState.peerConnections[peerId] = pc;
-            return pc;
-        };
-
-        /** Envoie des données P2P à un seul pair */
-        const sendDataToPeer = (peerId, data) => {
-            const dc = gameState.dataChannels[peerId];
-            if (dc && dc.readyState === 'open') {
-                dc.send(JSON.stringify(data));
-            } else if (gameState.isHost && peerId === gameState.localPlayerId) {
-                // Si l'hôte s'envoie un message, il le traite localement
-                handleP2PMessage(gameState.localPlayerId, JSON.stringify(data));
-            } else {
-                console.warn(`[P2P] DataChannel to ${peerId} not open. State: ${dc ? dc.readyState : 'undefined'}`);
-            }
-        };
-
-        /** Envoie des données P2P à tous les pairs connectés (Hôte) */
-        const sendDataToAllPeers = (data) => {
-            Object.keys(gameState.dataChannels).forEach(id => {
-                if (id !== gameState.localPlayerId) { // Ne pas s'envoyer le message P2P
-                    sendDataToPeer(id, data);
-                }
-            });
-            // Hôte traite toujours le message localement (il est son propre "peer" pour l'état)
-            handleP2PMessage(gameState.localPlayerId, JSON.stringify(data));
-        };
-        
-        /** Envoie des données à tous (Hôte) - Inclut le message à l'hôte lui-même et à tous les pairs */
-        const sendDataToAll = (data) => {
-             // 1. Envoie aux pairs
-            sendDataToAllPeers(data);
-             // 2. Traite l'état de l'hôte
-            if (data.type === 'START_MANCHE' || data.type === 'END_MANCHE' || data.type === 'END_GAME') {
-                handleP2PMessage(gameState.localPlayerId, JSON.stringify(data));
-            }
-        };
-
-
-        /** Gère les messages reçus via le DataChannel P2P */
-        const handleP2PMessage = (senderId, message) => {
             try {
-                const data = JSON.parse(message);
-                
-                // Logique du chat
-                if (data.type === 'CHAT') {
-                    appendMessage(data);
-                    
-                    // Logique de l'hôte pour la détection des commandes spéciales
-                    if (gameState.isHost) {
-                        handleHostCommands(data);
-                    }
-                    return;
-                }
-                
-                // Logique du jeu (seulement les mises à jour critiques)
-                if (data.type === 'GAME_STATE_UPDATE') {
-                    // Pour les joueurs, remplacer l'état de jeu par celui de l'hôte
-                    if (!gameState.isHost) {
-                        Object.assign(gameState, data.state);
-                        updateUI();
-                        // Re-attacher les éventuels 'AWAIT_RESPONSE'
-                        if (data.state.awaitingResponse) {
-                             handleInteractionPrompt(data.state.awaitingResponse);
-                        }
-                    }
-                    return;
-                }
-
-                // Logique de l'hôte
-                if (gameState.isHost) {
-                    handleHostLogic(senderId, data);
-                    return;
-                }
-                
-                // Logique spécifique des joueurs (suite à une commande de l'hôte)
-                handlePlayerLogic(data);
-
-            } catch (e) {
-                console.error("Erreur lors du traitement du message P2P:", e);
+                await addDoc(getChatCollectionRef(db), message);
+                console.log("Message envoyé.");
+            } catch (error) {
+                console.error("Erreur lors de l'envoi du message:", error);
             }
-        };
+        }
 
-        /** Logique spécifique pour les joueurs (non hôtes) */
-        const handlePlayerLogic = (data) => {
-            switch (data.type) {
-                case 'START_MANCHE':
-                    // Initialiser la manche
-                    gameState.currentManche = data.mancheIndex;
-                    gameState.mancheGoal = data.goal;
-                    gameState.players = data.players;
-                    gameState.status = 'GAME_IN_PROGRESS';
-                    clearChat();
-                    appendMessage(data.bossMsg);
-                    
-                    // Attente de confirmation de prêt
-                    handleInteractionPrompt({ type: 'CONFIRM_READY', target: null });
-                    startWorkPointInterval();
-                    break;
-                
-                case 'UPDATE_TIMER':
-                    gameState.mancheTimer = data.timer;
-                    D.timerDisplay.textContent = `Timer: ${formatTime(data.timer)}`;
-                    break;
-
-                case 'UPDATE_SCORE':
-                    gameState.mancheCurrentScore = data.newMancheScore;
-                    updateUI();
-                    break;
-
-                case 'UPDATE_POINTS':
-                    if(data.senderId === gameState.localPlayerId) {
-                        gameState.workPoints = data.workPoints;
-                        updateUI();
-                    }
-                    break;
-                
-                case 'WORK_RESULT':
-                    appendMessage(data.bossMsg);
-                    gameState.mancheCurrentScore = data.newMancheScore;
-                    updateUI();
-                    
-                    // Animation visuelle
-                    D.appContainer.classList.add(data.result === 'SUCCESS' ? 'flash-success' : 'flash-failure');
-                    setTimeout(() => {
-                        D.appContainer.classList.remove('flash-success', 'flash-failure');
-                    }, 500);
-                    
-                    // Si le joueur a misé, il doit se mettre à jour localement ses points (l'hôte l'a déjà envoyé)
-                    break;
-                
-                case 'AWAIT_RESPONSE':
-                    handleInteractionPrompt(data.interaction);
-                    break;
-
-                case 'END_MANCHE':
-                    // Réception des scores anonymisés et passage au vote
-                    gameState.status = 'VOTE_FENEANT';
-                    clearChat();
-                    appendMessage(data.bossMsg);
-                    gameState.players = data.players; // Synchronisation finale des scores
-                    handleInteractionPrompt({ type: 'VOTE_FENEANT', target: null });
-                    break;
-                
-                case 'END_GAME':
-                    gameState.status = 'GAME_OVER';
-                    clearChat();
-                    appendMessage(data.bossMsg);
-                    handleInteractionPrompt({ type: 'GAME_OVER', target: null });
-                    break;
-            }
-        };
-
-
-        // ====================================================================================
-        // GESTION DU SIGNALING (WebSocket)
-        // ====================================================================================
-
-        /** Connexion au serveur de signalisation (Render) */
-        const connectSignalingServer = () => {
-            ws = new WebSocket(SIGNALING_SERVER_URL);
+        /**
+         * Vérifie et ajoute le message initial de la Patron(e) si la collection est vide.
+         * @param {object} firestore Instance de Firestore.
+         */
+        async function checkAndAddInitialMessage(firestore) {
+            const chatCollectionRef = getChatCollectionRef(firestore);
+            // On cherche le premier message (ordonné par timestamp ascendant)
+            const q = query(chatCollectionRef, limit(1));
             
-            ws.onopen = () => {
-                console.log("[WS] Connecté au serveur de signalisation.");
-                // Créer un ID de joueur local dès la connexion
-                gameState.localPlayerId = generateID('player');
-                
-                // Afficher le message d'accueil initial
-                clearChat();
-                appendMessage({ senderId: 'BOSS', text: "Bienvenue dans l'entreprise. Veuillez indiquer si vous voulez être **hôte** ou **rejoindre** une partie. (Lien vers les règles: [Lien vers les règles])" });
-                
-                // Demander l'interaction HOTE/REJOINDRE
-                handleInteractionPrompt({ type: 'HOTE_OU_REJOINDRE', target: null });
-            };
+            try {
+                const snapshot = await getDocs(q);
 
-            ws.onmessage = (event) => handleSignalingMessage(JSON.parse(event.data));
-            ws.onerror = (error) => console.error("[WS] Erreur WebSocket:", error);
-            ws.onclose = () => console.warn("[WS] Déconnecté du serveur de signalisation.");
-        };
-
-        /** Envoie un message au serveur de signalisation */
-        const sendSignalingMessage = (data) => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(data));
-            }
-        };
-
-        /** Gère les messages de signalisation reçus */
-        const handleSignalingMessage = async (data) => {
-            // Un message de l'hôte (Offre)
-            if (data.type === 'OFFER' && data.targetId === gameState.localPlayerId) {
-                console.log(`[WS] Reçu une OFFRE de ${data.senderId}`);
-                
-                // C'est un joueur qui reçoit une offre de l'hôte
-                const pc = createPeerConnection(data.senderId);
-                await pc.setRemoteDescription(data.sdp);
-                
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                sendSignalingMessage({
-                    type: 'ANSWER',
-                    targetId: data.senderId,
-                    senderId: gameState.localPlayerId,
-                    roomID: gameState.roomID,
-                    sdp: pc.localDescription
-                });
-                
-                // Passer à l'attente du DataChannel
-                gameState.status = 'WAITING_FOR_GAME_START';
-                handleInteractionPrompt({ type: 'WAITING_FOR_GAME_START', target: null });
-
-            } 
-            // Un message de réponse (Answer)
-            else if (data.type === 'ANSWER' && gameState.isHost && gameState.players[data.senderId]) {
-                console.log(`[WS] Reçu un ANSWER de ${data.senderId}`);
-                const pc = gameState.peerConnections[data.senderId];
-                if (pc) {
-                    await pc.setRemoteDescription(data.sdp);
-                    // Le DataChannel s'ouvrira automatiquement
-                }
-            } 
-            // Un candidat ICE
-            else if (data.type === 'ICE_CANDIDATE' && data.targetId === gameState.localPlayerId) {
-                console.log(`[WS] Reçu un ICE CANDIDATE de ${data.senderId}`);
-                const pc = gameState.peerConnections[data.senderId] || createPeerConnection(data.senderId);
-                try {
-                    await pc.addIceCandidate(data.candidate);
-                } catch (e) {
-                    console.error('Erreur lors de l\'ajout de l\'ICE candidate:', e);
-                }
-            } 
-            // Un nouveau joueur rejoint la salle de l'hôte (et n'est pas l'hôte)
-            else if (data.type === 'JOIN_ROOM' && gameState.isHost && data.roomID === gameState.roomID) {
-                
-                const newPlayerId = data.senderId;
-                const newPlayerName = data.playerName;
-                
-                // 1. Attribuer couleur et initialiser le joueur
-                const availableColors = COLORS.filter(c => !Object.values(gameState.players).some(p => p.color === c.hex));
-                const playerColor = availableColors.length > 0 ? availableColors[0].hex : COLORS[0].hex;
-
-                gameState.players[newPlayerId] = {
-                    id: newPlayerId,
-                    name: newPlayerName,
-                    color: playerColor,
-                    workPoints: 0,
-                    totalScore: 0,
-                    currentRoundScore: 0
-                };
-                
-                // 2. Créer l'offre WebRTC pour ce nouveau joueur
-                const pc = createPeerConnection(newPlayerId);
-                
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                
-                // 3. Envoyer l'offre au joueur via le serveur de signalisation
-                sendSignalingMessage({
-                    type: 'OFFER',
-                    targetId: newPlayerId,
-                    senderId: gameState.localPlayerId,
-                    roomID: gameState.roomID,
-                    sdp: pc.localDescription,
-                    // Inclure l'état du jeu et les joueurs à l'offre
-                    players: gameState.players
-                });
-                
-                // 4. Mettre à jour les joueurs avec la nouvelle liste (P2P Data Channel)
-                sendDataToAllPeers({ type: 'UPDATE_PLAYER_LIST', players: gameState.players });
-                
-                // L'hôte attendra l'événement 'connected' du DataChannel pour confirmer l'arrivée dans le chat
-                
-            } else {
-                 console.log("[WS] Message de signalisation non pertinent:", data);
-            }
-        };
-
-
-        // ====================================================================================
-        // GESTION DES COMMANDES (Hôte seulement)
-        // ====================================================================================
-
-        /** Gère les commandes spéciales de chat (Hôte seulement) */
-        const handleHostCommands = (data) => {
-            const text = data.text.toLowerCase().trim();
-
-            if (gameState.status === 'LOBBY' && text === 'commencer') {
-                if (Object.keys(gameState.players).length >= 4) {
-                    startManche();
-                } else {
-                    appendMessage({ senderId: 'BOSS', text: `Nous avons besoin d'au moins 4 joueurs pour commencer. Actuellement: ${Object.keys(gameState.players).length}.` });
-                }
-                return;
-            }
-            
-            // Logique de travail (si en cours de manche)
-            const mancheName = MANCHE_DATA[gameState.currentManche - 1]?.name.toLowerCase();
-            if (gameState.status === 'GAME_IN_PROGRESS' && mancheName && text.includes(mancheName) && text.includes('avec')) {
-                processWorkRequest(data);
-                return;
-            }
-            
-            // Logique de réponse OUI/NON pour le travail (si en attente d'une réponse de ce type)
-            if (gameState.awaitingResponse && gameState.awaitingResponse.type === 'YES_NO' && 
-                (text === 'oui' || text === 'non')) {
-                
-                // Pour l'hôte, il s'agit d'une réponse à sa propre invitation
-                if (data.senderId === gameState.localPlayerId) {
-                    processWorkResponse(data.senderId, text);
-                }
-                return;
-            }
-            
-            // Logique de vote
-            if (gameState.status === 'VOTE_FENEANT' || gameState.status === 'VOTE_EMPLOYE') {
-                handleVote(data);
-                return;
-            }
-            
-            // Logique de Rejouer
-            if (gameState.status === 'GAME_OVER' && text === 'rejouer') {
-                // Relance le jeu pour tous
-                sendDataToAll({ type: 'RESET_LOBBY', hostID: gameState.localPlayerId });
-            }
-        };
-
-        /** Logique de vote (Hôte seulement) */
-        const handleVote = (data) => {
-            if (!gameState.isHost) return;
-
-            const voteState = gameState.awaitingResponse;
-            if (!voteState || voteState.type !== 'VOTE_FENEANT' && voteState.type !== 'VOTE_EMPLOYE') return;
-
-            const voterID = data.senderId;
-            const votedName = data.text.trim();
-            const votedPlayer = findPlayerByName(votedName);
-
-            if (!votedPlayer) {
-                // Demander une nouvelle tentative (seule l'hôte envoie un message d'erreur à la personne)
-                sendDataToPeer(voterID, { type: 'AWAIT_RESPONSE', interaction: { ...voteState, error: true } });
-                sendDataToPeer(voterID, { type: 'CHAT', senderId: 'BOSS', text: `Nom de joueur invalide: "${votedName}". Veuillez ré-essayer.` });
-                return;
-            }
-            
-            // Enregistre le vote
-            voteState.votes[voterID] = votedPlayer.id;
-
-            // Vérifier si tout le monde a voté
-            if (Object.keys(voteState.votes).length === Object.keys(gameState.players).length) {
-                resolveVote(voteState.type);
-            }
-        };
-        
-        /** Résolution du vote (Hôte seulement) */
-        const resolveVote = (voteType) => {
-            if (!gameState.isHost) return;
-
-            const voteState = gameState.awaitingResponse;
-            let finalBossMsg = { type: 'CHAT', senderId: 'BOSS', text: '' };
-            let richestScore = Object.values(gameState.players).reduce((max, p) => Math.max(max, p.workPoints), -Infinity);
-
-            // Compte les votes
-            const counts = {};
-            Object.values(voteState.votes).forEach(id => {
-                counts[id] = (counts[id] || 0) + 1;
-            });
-            
-            // Trouver le gagnant (le plus voté)
-            let winnerId = null;
-            let maxVotes = -1;
-            Object.entries(counts).forEach(([id, count]) => {
-                if (count > maxVotes) {
-                    maxVotes = count;
-                    winnerId = id;
-                }
-            });
-            
-            const winnerName = gameState.players[winnerId].name;
-
-            if (voteType === 'VOTE_FENEANT') {
-                
-                // Pénalité : Le joueur perd ses points de la manche actuelle (currentRoundScore)
-                // Note: currentRoundScore n'est pas maintenu pour la simplification, on va faire perdre la moitié de ses points de travail
-                const pointsLost = Math.round(gameState.players[winnerId].workPoints / 2);
-                gameState.players[winnerId].workPoints -= pointsLost;
-
-                finalBossMsg.text = `Le joueur le plus fainéant est désigné : **${winnerName}** avec ${maxVotes} votes. **${winnerName}** a perdu ${pointsLost} points de travail par sanction !`;
-                
-                // Prochaine étape : vote pour l'employé du mois
-                gameState.status = 'VOTE_EMPLOYE';
-                sendDataToAll({ type: 'CHAT', ...finalBossMsg });
-                
-                // Demander l'interaction VOTE_EMPLOYE
-                gameState.awaitingResponse = { type: 'VOTE_EMPLOYE', target: null, votes: {} };
-                Object.keys(gameState.players).forEach(id => sendDataToPeer(id, { type: 'AWAIT_RESPONSE', interaction: gameState.awaitingResponse }));
-
-            } else if (voteType === 'VOTE_EMPLOYE') {
-                
-                // Récompense : Le joueur voit son score égalisé au plus riche
-                gameState.players[winnerId].workPoints = richestScore;
-
-                finalBossMsg.text = `L'employé(e) du mois est désigné : **${winnerName}** avec ${maxVotes} votes. Son score est égalisé au plus riche !`;
-                
-                // Prochaine étape : manche suivante ou fin de partie
-                gameState.status = 'MANCHE_ENDED';
-                sendDataToAll({ type: 'CHAT', ...finalBossMsg });
-
-                // Démarrer la prochaine manche après un petit délai
-                setTimeout(() => startManche(), 5000);
-            }
-            
-            // Mise à jour finale des scores pour tous
-            sendDataToAllPeers({ type: 'UPDATE_PLAYER_LIST', players: gameState.players });
-            updateUI();
-        };
-
-        // ====================================================================================
-        // GESTION DES INTERACTIONS UTILISATEUR
-        // ====================================================================================
-
-        /** Affiche le message d'interaction et gère l'état */
-        const handleInteractionPrompt = (interaction) => {
-            // Effacer l'état précédent (sauf si on a un message d'erreur)
-            if (!interaction.error) {
-                 D.messageInput.classList.remove('border-red-500');
-                 D.messageInput.value = '';
-            }
-
-            gameState.awaitingResponse = interaction;
-
-            D.messageInput.disabled = false;
-            
-            let promptText = '';
-            switch (interaction.type) {
-                case 'HOTE_OU_REJOINDRE':
-                    promptText = 'Voulez-vous être **hôte** ou **rejoindre** une partie ?';
-                    break;
-                case 'REJOINDRE_NOM_SALLE':
-                    promptText = 'Entrez l\'**ID de la salle** à rejoindre :';
-                    break;
-                case 'CHOISIR_NOM':
-                    promptText = 'Entrez votre **nom** (10 caractères max) :';
-                    break;
-                case 'WAITING_FOR_TEAM':
-                    promptText = 'En attente de la réponse de l\'équipe...';
-                    D.messageInput.disabled = true; // Désactive la saisie pendant l'attente
-                    break;
-                case 'YES_NO':
-                    promptText = 'Répondez **OUI** ou **NON** pour collaborer.';
-                    break;
-                case 'VOTE_FENEANT':
-                    promptText = 'Entrez le **nom du joueur** le plus fainéant pour voter.';
-                    break;
-                case 'VOTE_EMPLOYE':
-                    promptText = 'Entrez le **nom du joueur** pour l\'employé du mois.';
-                    break;
-                case 'CONFIRM_READY':
-                    promptText = 'La Patronne vous attend ! (Tapez **OK** pour commencer)';
-                    break;
-                case 'WAITING_FOR_HOST_START':
-                    promptText = 'En attente que l\'hôte lance la partie...';
-                    D.messageInput.disabled = true;
-                    break;
-                case 'WAITING_FOR_GAME_START':
-                    promptText = 'Connecté ! En attente que l\'hôte commence la manche...';
-                    D.messageInput.disabled = true;
-                    break;
-                case 'CHAT':
-                    promptText = 'Discutez avec votre équipe...';
-                    break;
-                case 'INVEST_POINTS':
-                    D.messageInput.disabled = true;
-                    D.investMaxInfo.textContent = `Max à investir : ${interaction.maxBid} pts.`;
-                    D.investInput.max = interaction.maxBid;
-                    D.investInput.value = 1;
-                    D.investPopup.classList.remove('hidden');
-                    return; // Sortir de la fonction pour ne pas écraser le popup
-                case 'GAME_OVER':
-                    promptText = 'La partie est terminée. (Tapez **rejouer** pour relancer le lobby)';
-                    break;
-                default:
-                    promptText = 'Interaction en cours...';
-            }
-            
-            D.investPopup.classList.add('hidden');
-            D.interactionPrompt.innerHTML = promptText;
-            D.messageInput.focus();
-        };
-
-        /** Logique de soumission du formulaire de chat */
-        D.messageForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const input = D.messageInput.value.trim();
-            if (!input || !gameState.awaitingResponse || D.messageInput.disabled) return;
-
-            const interactionType = gameState.awaitingResponse.type;
-            let validationError = false;
-
-            // --- Logique de pré-jeu et de lobby ---
-            if (interactionType === 'HOTE_OU_REJOINDRE') {
-                if (input.toLowerCase() === 'hôte' || input.toLowerCase() === 'hote') {
-                    gameState.isHost = true;
-                    gameState.roomID = generateID('salle');
-                    
-                    // L'hôte est son propre premier joueur
-                    gameState.players[gameState.localPlayerId] = {
-                        id: gameState.localPlayerId,
-                        name: 'Hôte', // Nom temporaire
-                        color: gameState.playerColor,
-                        workPoints: 0,
-                        totalScore: 0
+                // Si aucun message n'existe, ajouter le message de la patronne
+                if (snapshot.empty) {
+                    console.log("Ajout du message initial de la Patron(e).");
+                    const bossMessage = {
+                        senderId: "patrone",
+                        senderName: "Patron(e)",
+                        text: "Bienvenue dans l'équipe. L'objectif de cette manche est de compléter 150 pages de rapports. Au travail !",
+                        timestamp: serverTimestamp(),
+                        color: playerColors['patrone'].color
                     };
-
-                    sendSignalingMessage({ type: 'CREATE_ROOM', roomID: gameState.roomID, senderId: gameState.localPlayerId });
-                    
-                    // Demander le nom de l'hôte
-                    clearChat();
-                    appendMessage({ senderId: 'BOSS', text: `Salle créée : **${gameState.roomID}**. Partagez cet ID à vos amis.` });
-                    handleInteractionPrompt({ type: 'CHOISIR_NOM', target: 'HOTE' });
-
-                } else if (input.toLowerCase() === 'rejoindre') {
-                    handleInteractionPrompt({ type: 'REJOINDRE_NOM_SALLE', target: null });
-                } else {
-                    validationError = true;
+                    await addDoc(chatCollectionRef, bossMessage);
                 }
-            } 
-            else if (interactionType === 'REJOINDRE_NOM_SALLE') {
-                if (input.length > 3) {
-                    gameState.roomID = input;
-                    handleInteractionPrompt({ type: 'CHOISIR_NOM', target: 'JOUEUR' });
-                } else {
-                    validationError = true;
-                }
+            } catch (error) {
+                console.error("Erreur lors de la vérification du message initial:", error);
             }
-            else if (interactionType === 'CHOISIR_NOM') {
-                if (input.length > 0 && input.length <= 10) {
-                    gameState.playerName = input;
-                    
-                    // L'hôte s'ajoute
-                    if (gameState.isHost) {
-                        gameState.players[gameState.localPlayerId].name = input;
-                        gameState.players[gameState.localPlayerId].color = COLORS[0].hex; // L'hôte prend la première couleur (Rouge)
-                        gameState.playerColor = COLORS[0].hex;
-                        updateUI();
-                        
-                        handleInteractionPrompt({ type: 'WAITING_FOR_HOST_START', target: null });
-                        appendMessage({ senderId: 'BOSS', text: `Bienvenue, ${input} ! En attente de l'arrivée des participants. Tapez **commencer** lorsque tout le monde est là (4 à 8 joueurs).` });
-                        
-                    } else {
-                        // Le joueur envoie le message de JOINDRE au serveur
-                        const availableColor = COLORS[Math.floor(Math.random() * COLORS.length)].hex;
-                        gameState.playerColor = availableColor;
-                        
-                        sendSignalingMessage({ 
-                            type: 'JOIN_ROOM', 
-                            roomID: gameState.roomID, 
-                            senderId: gameState.localPlayerId,
-                            playerName: input,
-                            playerColor: availableColor
-                        });
+        }
 
-                        handleInteractionPrompt({ type: 'WAITING_FOR_HOST_START', target: null });
-                        clearChat();
-                        appendMessage({ senderId: 'BOSS', text: `Connecté à la salle **${gameState.roomID}** en tant que **${input}**. En attente que l'hôte lance la partie...` });
-                    }
-                    
-                } else {
-                    validationError = true;
-                }
-            }
-            // --- Logique en cours de jeu ---
-            else if (interactionType === 'CONFIRM_READY') {
-                // Seulement si le texte est 'ok'
-                 if (input.toLowerCase() === 'ok' || input.toLowerCase() === 'prêt' || input.toLowerCase() === 'pret') {
-                    // L'hôte gère la logique de démarrage après que tous aient dit 'OK'
-                    if (gameState.isHost) {
-                        // Pour l'hôte, c'est l'hôte qui dit OK
-                        gameState.players[gameState.localPlayerId].ready = true;
+        /**
+         * Dessine les messages dans l'interface utilisateur.
+         * @param {Array<object>} messages Liste des messages.
+         */
+        function renderMessages(messages) {
+            chatContainer.innerHTML = ''; // Nettoyer l'affichage
+            const fragment = document.createDocumentFragment();
 
-                        // Vérifier si tous les joueurs (dataChannels + hôte) sont prêts
-                        const allReady = Object.keys(gameState.players).every(id => gameState.players[id].ready);
+            messages.forEach(msg => {
+                const isUser = msg.senderId === currentUserId;
+                const senderInfo = playerColors[msg.senderId] || { name: msg.senderName, color: "#EAECEF" };
 
-                        if (allReady) {
-                            startMancheTimer(); // Démarre le jeu!
-                            sendDataToAllPeers({ type: 'START_TIMER_TICK' }); // Si nécessaire, pour synchronisation rapide
-                            handleInteractionPrompt({ type: 'CHAT', target: null });
-                        } else {
-                            // Envoie l'état aux autres (leur demandant de dire OK)
-                            sendDataToAllPeers({ type: 'CHAT', senderId: gameState.localPlayerId, text: input, ready: true });
-                        }
-                    } else {
-                        // Joueur envoie son 'OK' à l'hôte
-                         sendDataToPeer(Object.keys(gameState.dataChannels)[0], { 
-                            type: 'PLAYER_READY', 
-                            senderId: gameState.localPlayerId, 
-                            ready: true 
-                        });
-                        handleInteractionPrompt({ type: 'WAITING_FOR_GAME_START', target: null });
-                        sendDataToPeer(Object.keys(gameState.dataChannels)[0], { type: 'CHAT', senderId: gameState.localPlayerId, text: input });
-                    }
-                 } else {
-                     validationError = true;
-                 }
-            }
-            else if (interactionType === 'CHAT' || interactionType === 'YES_NO' || interactionType === 'VOTE_FENEANT' || interactionType === 'VOTE_EMPLOYE') {
-                
-                // Si la réponse est OUI/NON et n'est pas valide
-                if (interactionType === 'YES_NO' && input.toLowerCase() !== 'oui' && input.toLowerCase() !== 'non') {
-                    validationError = true;
-                } 
-                // Si la réponse est un VOTE et le nom n'existe pas
-                else if ((interactionType === 'VOTE_FENEANT' || interactionType === 'VOTE_EMPLOYE') && !findPlayerByName(input)) {
-                    validationError = true;
-                }
-                
-                if (validationError) {
-                    D.messageInput.classList.add('border-red-500');
-                    D.messageInput.value = '';
-                    D.interactionPrompt.textContent = 'Réponse non reconnue. Veuillez ré-essayer.';
-                    return;
-                }
+                // 1. Conteneur du message (flexbox)
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
 
-                // Envoie du message via P2P (l'hôte est un de ses propres pairs)
-                const messageData = {
-                    type: 'CHAT',
-                    senderId: gameState.localPlayerId,
-                    text: input
-                };
-                
-                if (interactionType === 'YES_NO' && gameState.currentWork) {
-                    messageData.workID = gameState.currentWork.workID;
-                    
-                    // Si joueur non hôte, envoie la réponse à l'hôte
-                    if (!gameState.isHost) {
-                        sendDataToPeer(Object.keys(gameState.dataChannels)[0], { 
-                            type: 'WORK_RESPONSE', 
-                            senderId: gameState.localPlayerId, 
-                            workID: gameState.currentWork.workID, 
-                            response: input 
-                        });
-                        // Le joueur local voit son message dans le chat
-                        appendMessage(messageData);
-                        handleInteractionPrompt({ type: 'WAITING_FOR_TEAM', target: gameState.currentWork.workID });
-                    }
-                    
-                } else if (interactionType === 'VOTE_FENEANT' || interactionType === 'VOTE_EMPLOYE') {
-                    // Si joueur non hôte, envoie le vote à l'hôte
-                    if (!gameState.isHost) {
-                        sendDataToPeer(Object.keys(gameState.dataChannels)[0], {
-                            type: 'VOTE_CAST',
-                            senderId: gameState.localPlayerId,
-                            voteType: interactionType,
-                            votedName: input
-                        });
-                        // Le joueur local voit son message dans le chat
-                        appendMessage(messageData);
-                        handleInteractionPrompt({ type: 'WAITING_FOR_TEAM', target: 'VOTE' });
-                    }
-                }
+                // 2. Bulle de message
+                const bubble = document.createElement('div');
+                bubble.className = `message-bubble ${isUser ? 'user-message' : 'other-message'} max-w-xs sm:max-w-md`;
 
-                // Si Hôte, ou si CHAT simple, l'envoi général prend le relais.
-                if (interactionType === 'CHAT' || gameState.isHost) {
-                    sendDataToAll(messageData);
-                }
-                
-                // Reset de la zone de saisie et de l'état
-                handleInteractionPrompt({ type: 'CHAT', target: null });
-            }
-            
-            // Si erreur, on s'arrête ici
-            if (validationError) {
-                 D.messageInput.classList.add('border-red-500');
-                 D.messageInput.value = '';
-                 D.interactionPrompt.textContent = 'Saisie invalide. Veuillez vérifier le format requis.';
-                 return;
-            }
+                // 3. Nom de l'expéditeur (en petit au-dessus)
+                const senderNameElement = document.createElement('div');
+                senderNameElement.className = `text-xs font-semibold mb-0.5 ${isUser ? 'text-right' : 'text-left'}`;
+                // Appliquer la couleur du joueur au nom
+                senderNameElement.style.color = senderInfo.color;
+                senderNameElement.textContent = senderInfo.name;
 
-            D.messageInput.value = '';
-        });
-
-        // ====================================================================================
-        // GESTION DES COMMANDES DE L'HÔTE (Messages de service reçus P2P)
-        // ====================================================================================
-
-        const handleHostLogic = (senderId, data) => {
-            switch (data.type) {
-                case 'PLAYER_READY':
-                    gameState.players[senderId].ready = true;
-                    // Vérifier si tous les joueurs (DataChannels + Hôte) sont prêts
-                    const allReady = Object.keys(gameState.dataChannels).length + 1 === Object.keys(gameState.players).length && Object.keys(gameState.players).every(id => gameState.players[id].ready);
-
-                    if (allReady) {
-                        startMancheTimer(); // Démarre le jeu!
-                        sendDataToAll({ type: 'CHAT', senderId: 'BOSS', text: "Le chronomètre est lancé ! Au travail !" });
-                        handleInteractionPrompt({ type: 'CHAT', target: null });
-                    }
-                    break;
-                
-                case 'WORK_RESPONSE':
-                    processWorkResponse(senderId, data.response);
-                    break;
-                    
-                case 'VOTE_CAST':
-                    handleVote({ senderId, text: data.votedName });
-                    break;
-
-                case 'INVEST_CAST':
-                    processInvestResponse(senderId, data.bidAmount);
-                    break;
-                    
-                case 'UPDATE_PLAYER_LIST':
-                    // Mise à jour de la liste des joueurs
-                    gameState.players = data.players;
-                    updateUI();
-                    break;
-                    
-                case 'RESET_LOBBY':
-                    // Réinitialisation du lobby
-                    if (data.hostID !== gameState.localPlayerId) { // Seulement si l'hôte est différent, sinon l'hôte gère sa propre réinitialisation
-                         Object.keys(gameState.peerConnections).forEach(id => gameState.peerConnections[id].close());
-                         Object.keys(gameState.dataChannels).forEach(id => delete gameState.dataChannels[id]);
-                         connectSignalingServer();
-                    }
-                    break;
-            }
-        };
-
-        // ====================================================================================
-        // POPUP D'INVESTISSEMENT DE POINTS
-        // ====================================================================================
-
-        D.investSubmit.addEventListener('click', () => {
-            const bid = parseInt(D.investInput.value, 10);
-            const maxBid = parseInt(D.investInput.max, 10);
-            
-            if (isNaN(bid) || bid < 1 || bid > maxBid || bid > gameState.workPoints) {
-                // Animation d'erreur sur l'input
-                D.investInput.classList.add('border-red-500');
-                setTimeout(() => D.investInput.classList.remove('border-red-500'), 500);
-                return;
-            }
-
-            // Envoi de la mise à l'hôte
-            if (!gameState.isHost) {
-                sendDataToPeer(Object.keys(gameState.dataChannels)[0], {
-                    type: 'INVEST_CAST',
-                    senderId: gameState.localPlayerId,
-                    workID: gameState.currentWork.workID,
-                    bidAmount: bid
+                // 4. Texte du message
+                const textElement = document.createElement('p');
+                textElement.className = 'text-sm break-words';
+                // Remplacer les noms de joueurs dans le texte par leur couleur (LOGIQUE MOCKUP)
+                let formattedText = msg.text;
+                Object.values(playerColors).forEach(player => {
+                    const regex = new RegExp(`\\b${player.name}\\b`, 'g');
+                    // Crée un span avec la couleur du joueur pour le nom
+                    formattedText = formattedText.replace(regex, `<span style="color:${player.color}; font-weight: 600;">${player.name}</span>`);
                 });
-            } else {
-                // Si l'hôte mise lui-même
-                processInvestResponse(gameState.localPlayerId, bid);
+                textElement.innerHTML = formattedText;
+
+
+                // 5. Temps du message (optionnel, plus petit)
+                const timeElement = document.createElement('div');
+                timeElement.className = `text-xs text-gray-400 mt-1 ${isUser ? 'text-right' : 'text-left'}`;
+                if (msg.timestamp && msg.timestamp.toDate) {
+                    timeElement.textContent = msg.timestamp.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                }
+
+                // 6. Assemblage
+                bubble.appendChild(senderNameElement);
+                bubble.appendChild(textElement);
+                bubble.appendChild(timeElement);
+                messageWrapper.appendChild(bubble);
+                fragment.appendChild(messageWrapper);
+            });
+
+            chatContainer.appendChild(fragment);
+
+            // Faire défiler vers le bas
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // --- Gestion des événements UI ---
+
+        /**
+         * Gère l'envoi du message lorsque le bouton est cliqué.
+         */
+        function handleSendClick() {
+            const text = messageInput.value;
+            if (text.trim() !== "") {
+                sendMessage(text);
+                messageInput.value = ""; // Vider l'input
+                messageInput.focus(); // Re-focuser l'input
             }
-            
-            // Fermeture et attente
-            D.investPopup.classList.add('hidden');
-            handleInteractionPrompt({ type: 'WAITING_FOR_TEAM', target: gameState.currentWork.workID });
-        });
+        }
 
-        // ====================================================================================
-        // INITIALISATION
-        // ====================================================================================
+        /**
+         * Gère l'appui sur la touche Entrée dans la zone de saisie.
+         * @param {KeyboardEvent} event
+         */
+        function handleInputKeypress(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault(); // Empêche le retour à la ligne dans certains cas
+                handleSendClick();
+            }
+        }
 
+        // --- Logique du Jeu (Firebase & Chat) ---
+
+        function setupChatListener() {
+            const chatCollectionRef = getChatCollectionRef(db);
+            // Requête: tous les messages, ordonnés par timestamp
+            const q = query(chatCollectionRef, orderBy("timestamp", "asc"));
+
+            // onSnapshot écoute les changements en temps réel
+            onSnapshot(q, (snapshot) => {
+                const messages = [];
+                snapshot.forEach((doc) => {
+                    messages.push(doc.data());
+                });
+                renderMessages(messages);
+            }, (error) => {
+                console.error("Erreur de l'écouteur de chat en temps réel:", error);
+            });
+
+            // Une fois que l'écouteur est branché et que le jeu est prêt, on met le focus sur l'input
+            messageInput.focus();
+        }
+
+        async function initializeAppAndAuth() {
+            try {
+                // 1. Initialisation des services Firebase
+                const firebaseApp = initializeApp(firebaseConfig);
+                db = getFirestore(firebaseApp);
+                auth = getAuth(firebaseApp);
+                // Configuration pour voir les logs dans la console si besoin
+                // setLogLevel('Debug');
+
+                // 2. Authentification
+                let userCredential;
+                if (initialAuthToken) {
+                    userCredential = await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    userCredential = await signInAnonymously(auth);
+                }
+                currentUserId = userCredential.user.uid;
+                console.log(`Authentifié avec succès. ID Utilisateur: ${currentUserId}`);
+
+                // Mettre à jour la liste des joueurs avec l'utilisateur actuel
+                // Ceci permet d'utiliser l'ID de l'utilisateur pour le rendu droite/gauche
+                if (!playerColors[currentUserId]) {
+                     playerColors[currentUserId] = { name: `Vous (${currentUserId.substring(0, 4)})`, color: "#3F72AF" };
+                }
+
+                // 3. Démarrer le jeu (vérifier le message initial et lancer l'écouteur)
+                await checkAndAddInitialMessage(db);
+                setupChatListener();
+
+            } catch (error) {
+                console.error("Échec de l'initialisation ou de l'authentification:", error);
+                // Afficher un message d'erreur dans le chat si l'initialisation échoue
+                chatContainer.innerHTML = `<div class="text-red-400 p-4">Erreur critique d'initialisation: ${error.message}. Vérifiez la console.</div>`;
+            }
+        }
+
+        // --- Démarrage ---
         window.onload = () => {
-            connectSignalingServer();
-            updateUI(); // Initialisation de l'UI
+            // Attacher les gestionnaires d'événements
+            sendButton.addEventListener('click', handleSendClick);
+            messageInput.addEventListener('keydown', handleInputKeypress);
+
+            initializeAppAndAuth();
         };
-
-        // Mise au point automatique au chargement (pour l'expérience mobile)
-        document.addEventListener('DOMContentLoaded', () => {
-            if (D.messageInput) {
-                D.messageInput.focus();
-            }
-        });
-
-        // ====================================================================================
-        // DEBUG CONSOLE
-        // ====================================================================================
-        console.log("Jeu 'Épuisement Professionnel' initialisé. Serveur de signalisation: " + SIGNALING_SERVER_URL);
-        console.log("Variable de points par 10s: WORK_POINTS_PER_10_SECONDS = " + WORK_POINTS_PER_10_SECONDS);
 
     </script>
 </body>
