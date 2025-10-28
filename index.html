@@ -120,12 +120,25 @@
             font-weight: 600;
             transition: background-color 0.3s;
         }
+        
+        .btn-secondary {
+            background-color: #3B82F6; /* Bleu */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
 
         .btn-primary:hover:not(:disabled) {
             background-color: #45a049;
         }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #2563EB;
+        }
 
-        .btn-primary:disabled {
+        .btn-primary:disabled, .btn-secondary:disabled {
             background-color: #5A5A5A;
             cursor: not-allowed;
         }
@@ -174,7 +187,7 @@
             <!-- Compte à rebours -->
             <div id="countdown-timer">00:00</div>
             <!-- Points de travail du joueur local -->
-            <div id="work-points" class="font-bold" style="color: var(--player-color, var(--color-accent-white));">
+            <div id="work-points" class="font-bold">
                 Points de travail: 0
             </div>
         </div>
@@ -183,26 +196,54 @@
     <!-- Écran de connexion/Lobby -->
     <div id="lobby-screen" class="p-8 flex flex-col justify-center items-center h-full text-center">
         <h1 class="text-3xl font-bold mb-6">Épuisement Professionnel</h1>
-        <p class="mb-6">Entrez votre nom et choisissez votre couleur pour rejoindre le lobby.</p>
-
-        <input type="text" id="player-name-input" placeholder="Votre nom" 
-               class="w-full max-w-xs p-3 rounded-lg mb-4 bg-gray-600 text-white focus:ring-blue-500 focus:border-blue-500">
         
-        <div class="flex space-x-2 mb-6">
-            <select id="player-color-select" class="p-3 rounded-lg bg-gray-600 text-white">
-                <!-- Les options de couleur seront ajoutées par JS -->
-            </select>
+        <!-- Étape 1: Nom et Couleur -->
+        <div id="step-1" class="w-full max-w-xs">
+            <p class="mb-4">1. Entrez votre nom et choisissez votre couleur.</p>
+             <input type="text" id="player-name-input" placeholder="Votre nom" 
+                    class="w-full p-3 rounded-lg mb-4 bg-gray-600 text-white focus:ring-blue-500 focus:border-blue-500">
+            
+            <div class="flex justify-center space-x-2 mb-6">
+                <select id="player-color-select" class="p-3 rounded-lg bg-gray-600 text-white w-full">
+                    <!-- Les options de couleur seront ajoutées par JS -->
+                </select>
+            </div>
+            
+            <button id="next-step-btn" class="btn-secondary w-full" disabled>
+                Confirmer
+            </button>
         </div>
 
-        <button id="join-lobby-btn" class="btn-primary w-full max-w-xs" disabled>
-            Rejoindre le Lobby
-        </button>
-        
-        <div id="lobby-info" class="mt-8 text-center hidden">
-            <p class="text-lg font-semibold mb-2">Statut du Lobby</p>
-            <p id="player-count">Joueurs connectés: 1 (Vous)</p>
+        <!-- Étape 2: Hôte ou Rejoindre -->
+        <div id="step-2" class="w-full max-w-xs hidden">
+            <p class="mb-4">2. Voulez-vous créer ou rejoindre une partie?</p>
+
+            <button id="create-host-btn" class="btn-primary w-full mb-3">
+                Créer Partie (Hôte)
+            </button>
             
-            <!-- Affiché UNIQUEMENT si l'utilisateur est l'HÔTE -->
+            <div class="flex items-center space-x-2 mt-4">
+                <input type="text" id="host-code-input" placeholder="Code de Partie" maxlength="6"
+                       class="flex-grow p-3 rounded-lg bg-gray-600 text-white text-center uppercase tracking-widest focus:ring-blue-500 focus:border-blue-500">
+                <button id="join-game-btn" class="btn-secondary p-3" style="width: 110px;" disabled>
+                    Rejoindre
+                </button>
+            </div>
+        </div>
+        
+        <!-- Écran du Lobby -->
+        <div id="lobby-info" class="mt-8 text-center hidden w-full max-w-xs">
+            <p class="text-lg font-semibold mb-2" id="lobby-title"></p>
+            
+            <!-- Affichage du Code de Partie (pour l'Hôte) ou du Statut (pour le Joiner) -->
+            <div class="bg-gray-700 p-3 rounded-lg mb-4" id="code-display">
+                <p class="text-sm">Code de Partie:</p>
+                <code class="text-xl font-mono tracking-widest text-yellow-400" id="host-code-value">...</code>
+            </div>
+            
+            <p id="player-count">Joueurs connectés: 1 / 8</p>
+            
+            <!-- Bouton Démarrer - UNIQUEMENT pour l'HÔTE -->
             <button id="start-game-btn" class="btn-primary mt-4" disabled>
                 Démarrer la partie (Min 4 joueurs)
             </button>
@@ -230,9 +271,10 @@
     // --- IMPORTATIONS FIREBASE ET WEBRTC ---
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, limit, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     
     // --- VARIABLES GLOBALES FIREBASE ---
+    // NOTE: Ces variables sont fournies par l'environnement Canvas.
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
     const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
     const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -264,7 +306,8 @@
         name: null,
         colorName: null,
         colorClass: null,
-        isHost: false, // Seulement l'hôte maintient l'état du lobby
+        isHost: false, // Rôle du joueur
+        hostId: null, // ID de l'hôte (si Joiner)
         workPoints: 0,
     };
     
@@ -272,15 +315,24 @@
     let peers = new Map(); // Map de 'peerId' -> RTCPeerConnection
     let dataChannels = new Map(); // Map de 'peerId' -> RTCDataChannel
 
-    // État du Lobby (maintenu par l'hôte)
-    let connectedPlayers = new Map(); // Map de 'playerId' -> { name, colorClass, isReady, peerConnectionId }
+    // État du Lobby (maintenu par l'hôte et copié par les joiners)
+    let connectedPlayers = new Map(); // Map de 'playerId' -> { id, name, colorClass, isHost, peerConnectionId }
     
     // --- ÉLÉMENTS DU DOM ---
     const $nameInput = document.getElementById('player-name-input');
     const $colorSelect = document.getElementById('player-color-select');
-    const $joinBtn = document.getElementById('join-lobby-btn');
+    const $nextStepBtn = document.getElementById('next-step-btn');
+    const $createHostBtn = document.getElementById('create-host-btn');
+    const $hostCodeInput = document.getElementById('host-code-input');
+    const $joinGameBtn = document.getElementById('join-game-btn');
     const $startBtn = document.getElementById('start-game-btn');
+    
+    const $step1 = document.getElementById('step-1');
+    const $step2 = document.getElementById('step-2');
     const $lobbyScreen = document.getElementById('lobby-screen');
+    const $lobbyInfo = document.getElementById('lobby-info');
+    const $hostCodeValue = document.getElementById('host-code-value');
+
     const $gameInterface = document.getElementById('game-interface');
     const $chatWindow = document.getElementById('chat-window');
     const $messageInput = document.getElementById('message-input');
@@ -288,14 +340,21 @@
     const $playerCount = document.getElementById('player-count');
     const $gameStatusBar = document.getElementById('game-status-bar');
     const $workPoints = document.getElementById('work-points');
+    const $lobbyTitle = document.getElementById('lobby-title');
+
 
     // --- FONCTIONS UTILITAIRES ---
+
+    /** Génère un code court de 6 caractères à partir d'un UUID */
+    function generateShortCode(uuid) {
+        return uuid.replace(/-/g, '').substring(0, 6).toUpperCase();
+    }
 
     /** Initialise Firebase (Auth et Firestore) */
     async function initFirebase() {
         try {
             if (Object.keys(firebaseConfig).length === 0) {
-                console.warn("Configuration Firebase manquante. L'authentification et Firestore ne seront pas disponibles.");
+                console.warn("Configuration Firebase manquante.");
                 return;
             }
             
@@ -314,8 +373,8 @@
                 if (user) {
                     userId = user.uid;
                     console.log("Authentification Firebase réussie. User ID:", userId);
-                    // L'authentification est prête, on peut initialiser le lobby
-                    checkLobbyReadiness();
+                    // L'auth est prête, on peut passer à l'étape 1
+                    checkStep1Readiness();
                 } else {
                     console.error("Échec de l'authentification Firebase.");
                 }
@@ -345,30 +404,33 @@
         const bubble = document.createElement('div');
         const meta = document.createElement('div');
 
-        // Récupère la variable CSS pour la couleur du joueur
-        const colorVar = getComputedStyle(document.documentElement)
-                                .getPropertyValue(`--player-color`);
-
+        // Récupère la variable CSS pour la couleur du joueur (nécessaire pour la bulle left)
+        const rootStyles = getComputedStyle(document.documentElement);
+        
         bubble.classList.add('message-bubble');
         bubble.textContent = message;
 
         if (isLocal) {
             messageContainer.classList.add('flex', 'justify-end');
             bubble.classList.add('message-right');
-            bubble.style.setProperty('--player-color', localPlayer.colorClass ? `var(${localPlayer.colorClass})` : colorVar);
+            // La bulle locale utilise la couleur locale (définie sur body)
+            bubble.style.setProperty('--player-color', rootStyles.getPropertyValue(localPlayer.colorClass)); 
         } else {
-            messageContainer.classList.add('flex', 'justify-start', senderColorClass);
+            // Pour les messages des autres, on trouve la bonne classe à partir de connectedPlayers
+            const sender = connectedPlayers.get(senderId); // Supposons qu'on passe l'ID
+            const colorClass = sender ? sender.colorClass : senderColorClass; // Fallback
+            
+            messageContainer.classList.add('flex', 'justify-start');
+            messageContainer.classList.classList.add(colorClass); // Ajoute la classe de couleur
             bubble.classList.add('message-left');
-            // Définit la couleur d'accentuation de la bulle pour les autres joueurs
-            bubble.style.setProperty('--player-color', `var(--player-color)`);
+            // La bulle extérieure utilise la couleur définie par la classe
+            bubble.style.setProperty('--player-color', rootStyles.getPropertyValue(`--player-color`));
             
             // Méta-données (Nom de l'expéditeur)
             meta.classList.add('message-meta');
             meta.textContent = senderName;
-            meta.style.color = `var(--player-color)`; // Nom dans la couleur du joueur
+            meta.style.color = rootStyles.getPropertyValue(`--player-color`); // Nom dans la couleur du joueur
             messageContainer.appendChild(meta);
-            
-            messageContainer.style.setProperty('--player-color', `var(--player-color)`);
         }
         
         messageContainer.appendChild(bubble);
@@ -389,101 +451,89 @@
         const randomIndex = Math.floor(Math.random() * PLAYER_COLORS.length);
         $colorSelect.value = PLAYER_COLORS[randomIndex].name;
     }
+
+    /** Met à jour l'état local du joueur après l'étape 1 et applique le style */
+    function finalizeLocalPlayerInfo() {
+        const selectedColorName = $colorSelect.value;
+        const color = PLAYER_COLORS.find(c => c.name === selectedColorName);
+        
+        localPlayer.name = $nameInput.value.trim();
+        localPlayer.colorName = selectedColorName;
+        localPlayer.colorClass = color ? `color-${color.name}` : 'color-Rouge';
+        
+        // Appliquer la couleur au style local pour les messages locaux/statut
+        const root = document.documentElement;
+        root.style.setProperty('--player-color', root.style.getPropertyValue(localPlayer.colorClass));
+        $workPoints.style.color = root.style.getPropertyValue('--player-color');
+    }
     
     // --- LOGIQUE WEBRTC ET SIGNALING ---
 
     /** Connecte au serveur de signalisation WebSocket */
-    function connectToSignalingServer(isHost) {
-        return new Promise((resolve, reject) => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                resolve(ws);
+    function connectToSignalingServer(callback) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            callback();
+            return;
+        }
+        
+        ws = new WebSocket(SIGNALING_SERVER_URL);
+        $connectionStatus.textContent = "Statut: Connexion au serveur...";
+
+        ws.onopen = () => {
+            console.log("Connecté au serveur de signalisation.");
+            $connectionStatus.textContent = "Statut: Connecté.";
+            callback();
+        };
+
+        ws.onmessage = async (event) => {
+            const message = JSON.parse(event.data);
+            
+            // Si le message est destiné à quelqu'un d'autre (basé sur le `targetId`), ignorer.
+            if (message.targetId && message.targetId !== localPlayer.id) {
+                // Ce message n'est pas pour moi (ex: A a fait une offre à B)
                 return;
             }
             
-            ws = new WebSocket(SIGNALING_SERVER_URL);
-            $connectionStatus.textContent = "Statut: Connexion au serveur...";
+            console.log("Message de signalisation ciblé reçu:", message);
 
-            ws.onopen = () => {
-                console.log("Connecté au serveur de signalisation.");
-                $connectionStatus.textContent = "Statut: Connecté. En attente d'autres joueurs...";
-                localPlayer.isHost = isHost;
-                
-                // L'hôte est le premier joueur dans sa propre liste
-                connectedPlayers.set(localPlayer.id, {
-                    name: localPlayer.name,
-                    colorClass: localPlayer.colorClass,
-                    isHost: true,
-                    peerConnectionId: null // Pas de connexion P2P vers soi-même
-                });
-                updatePlayerCountDisplay();
-                
-                resolve(ws);
-            };
+            switch (message.type) {
+                case 'request_to_join_host':
+                    // **[HOST LOGIC]** Le joueur veut rejoindre. On met à jour le lobby et on démarre P2P.
+                    if (localPlayer.isHost) {
+                        handleLobbyJoinRequest(message);
+                    }
+                    break;
+                case 'offer':
+                    handleOffer(message);
+                    break;
+                case 'answer':
+                    handleAnswer(message);
+                    break;
+                case 'candidate':
+                    handleCandidate(message);
+                    break;
+                case 'chat':
+                    // Message P2P relayé (Devrait être rare si P2P est établi, mais géré ici si canal de données lent)
+                    // Pour ce jeu, on suppose que tous les CHATs passent par le canal P2P
+                    break;
+                // Ajoutez d'autres types de messages de jeu ici...
+            }
+        };
 
-            ws.onmessage = async (event) => {
-                const message = JSON.parse(event.data);
-                console.log("Message de signalisation reçu:", message);
+        ws.onerror = (error) => {
+            console.error("Erreur WebSocket:", error);
+            $connectionStatus.textContent = "Statut: Erreur de connexion.";
+        };
 
-                switch (message.type) {
-                    case 'offer':
-                        handleOffer(message);
-                        break;
-                    case 'answer':
-                        handleAnswer(message);
-                        break;
-                    case 'candidate':
-                        handleCandidate(message);
-                        break;
-                    case 'new_peer':
-                        // Reçu par l'hôte et les autres joueurs déjà connectés
-                        if (localPlayer.isHost) {
-                            // L'hôte crée une offre pour le nouveau pair
-                            createOffer(message.senderId);
-                        } else {
-                            // Les autres joueurs créent une offre pour le nouveau pair
-                            // S'ils n'ont pas encore de connexion avec lui (mappage full mesh)
-                            if (!peers.has(message.senderId)) {
-                                createOffer(message.senderId);
-                            }
-                        }
-                        break;
-                    case 'join_lobby':
-                        handleLobbyJoin(message);
-                        break;
-                    case 'chat':
-                        // Message reçu via le canal de données (P2P)
-                        if (message.senderId !== localPlayer.id) {
-                            const sender = connectedPlayers.get(message.senderId);
-                            if (sender) {
-                                addMessage(sender.name, sender.colorClass, message.text);
-                            } else {
-                                console.warn("Message de chat d'un expéditeur inconnu:", message.senderId);
-                            }
-                        }
-                        break;
-                    case 'start_game':
-                        startGame();
-                        break;
-                    // Ajoutez d'autres types de messages de jeu ici...
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error("Erreur WebSocket:", error);
-                $connectionStatus.textContent = "Statut: Erreur de connexion.";
-                reject(error);
-            };
-
-            ws.onclose = () => {
-                console.log("Déconnecté du serveur de signalisation.");
-                $connectionStatus.textContent = "Statut: Déconnecté.";
-            };
-        });
+        ws.onclose = () => {
+            console.log("Déconnecté du serveur de signalisation.");
+            $connectionStatus.textContent = "Statut: Déconnecté.";
+        };
     }
 
     /** Envoie un message de signalisation au serveur */
     function sendSignalingMessage(message) {
-        message.senderId = localPlayer.id;
+        message.senderId = localPlayer.id; // J'ajoute toujours mon ID
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(message));
         } else {
@@ -527,22 +577,25 @@
 
         // 2. Événement de canal de données
         if (isInitiator) {
-            // Créateur de la connexion
             const dataChannel = pc.createDataChannel("chat-channel");
             setupDataChannel(peerId, dataChannel);
-            pc.ondatachannel = (event) => setupDataChannel(peerId, event.channel); // Fallback ou double-vérification
         } else {
-            // Récepteur de la connexion
             pc.ondatachannel = (event) => setupDataChannel(peerId, event.channel);
         }
 
         // 3. Gestion de l'état de la connexion (pour le débogage)
-        pc.oniceconnectionstatechange = (event) => {
+        pc.oniceconnectionstatechange = () => {
             console.log(`État ICE pour ${peerId}: ${pc.iceConnectionState}`);
-            // Gérer les déconnexions ici
             if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
                 console.log(`Connexion échouée/fermée avec ${peerId}.`);
                 handlePeerDisconnection(peerId);
+            }
+            if (pc.iceConnectionState === 'connected') {
+                console.log(`P2P CONNECION OK avec ${peerId}`);
+                // Si l'hôte vient de se connecter à un nouveau pair, il envoie l'état du lobby
+                if (localPlayer.isHost) {
+                    sendLobbyState(peerId);
+                }
             }
         };
 
@@ -555,31 +608,29 @@
         channel.onopen = () => {
             console.log(`Canal de données ouvert avec ${peerId}`);
             dataChannels.set(peerId, channel);
-            
-            // Si c'est un nouveau pair, le pair local doit s'annoncer à l'autre pair.
-            // L'hôte a déjà géré l'ajout à la liste dans handleLobbyJoin.
-            
-            // Si le pair est l'hôte, il peut mettre à jour le compteur global via le canal de données si besoin.
-            if (localPlayer.isHost) {
-                // S'assurer que le nouveau joueur est informé de tous les joueurs connectés
-                sendLobbyState(peerId);
-            }
         };
         
         channel.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            // Si le message est un message de chat, il sera géré par ws.onmessage
-            // Sinon, il peut s'agir d'un message de jeu P2P
+            
             if (message.type === 'chat') {
                  if (message.senderId !== localPlayer.id) {
                     const sender = connectedPlayers.get(message.senderId);
                     if (sender) {
                         addMessage(sender.name, sender.colorClass, message.text);
+                    } else {
+                        // Cas où l'hôte envoie un message avant de recevoir l'état complet
+                        addMessage("Joueur Inconnu", "color-Rouge", message.text);
                     }
                 }
             } else if (message.type === 'lobby_state') {
                 // Reçu par un non-hôte. Met à jour la liste des joueurs
-                handleLobbyState(message);
+                if (!localPlayer.isHost) {
+                    handleLobbyState(message);
+                }
+            } else if (message.type === 'start_game') {
+                // Reçu par tous les joueurs de l'hôte
+                startGame();
             }
         };
         
@@ -595,7 +646,7 @@
         if (!localPlayer.isHost) return;
 
         const playerList = Array.from(connectedPlayers.entries()).map(([id, player]) => ({
-            id,
+            id: player.id,
             name: player.name,
             colorClass: player.colorClass,
             isHost: player.isHost,
@@ -610,6 +661,9 @@
         const channel = dataChannels.get(targetId);
         if (channel && channel.readyState === 'open') {
             channel.send(JSON.stringify(message));
+            console.log(`[HOST] État du lobby envoyé à ${targetId.substring(0, 6)}`);
+        } else {
+             console.warn(`[HOST] Tentative d'envoyer l'état du lobby à ${targetId.substring(0, 6)}, mais le canal n'est pas ouvert.`);
         }
     }
 
@@ -619,18 +673,21 @@
         connectedPlayers.clear();
         message.players.forEach(p => {
             connectedPlayers.set(p.id, p);
-            if (p.id === localPlayer.id) {
-                // Assurez-vous que les informations locales sont à jour
-                localPlayer.colorClass = p.colorClass;
-            }
         });
+        
         updatePlayerCountDisplay();
-        $lobbyScreen.querySelector('#lobby-info').classList.remove('hidden');
-        $playerCount.textContent = `Lobby de l'hôte (${message.hostId}): ${connectedPlayers.size} joueurs.`;
+        $lobbyInfo.classList.remove('hidden');
+        $lobbyTitle.textContent = `Lobby de ${connectedPlayers.get(message.hostId)?.name || 'l\'Hôte'}`;
+        
+        // Cacher le code de partie pour les non-hôtes
+        document.getElementById('code-display').classList.add('hidden');
+        $connectionStatus.textContent = "Statut: Connecté au Lobby (via P2P)";
     }
 
     /** Gère la déconnexion d'un pair */
     function handlePeerDisconnection(peerId) {
+        const pc = peers.get(peerId);
+        if (pc) pc.close();
         peers.delete(peerId);
         dataChannels.delete(peerId);
         
@@ -641,11 +698,14 @@
                 connectedPlayers.delete(peerId);
                 console.log(`Le joueur ${disconnectedPlayer.name} a quitté le lobby.`);
                 updatePlayerCountDisplay();
-                // Annoncer la déconnexion à tous les pairs (via P2P)
+                // Diffuser le nouvel état du lobby à tous les joueurs restants
                 broadcastData({ type: 'player_leave', playerId: peerId });
+                // Mettre à jour l'état du lobby pour les autres joueurs
+                connectedPlayers.forEach((player, id) => {
+                    if (id !== localPlayer.id) sendLobbyState(id);
+                });
             }
         }
-        // TODO: Gérer la migration de l'hôte si l'hôte se déconnecte.
     }
     
     /** Création d'une offre WebRTC (Initiateur) */
@@ -662,7 +722,7 @@
                 sessionDescription: pc.localDescription
             });
         } catch (error) {
-            console.error("Erreur lors de la création de l'offre:", error);
+            console.error(`Erreur lors de la création de l'offre pour ${targetId.substring(0, 6)}:`, error);
         }
     }
 
@@ -710,73 +770,100 @@
         }
     }
     
-    // --- LOGIQUE SPÉCIFIQUE DU LOBBY ---
-
-    /** Gère la réception d'un message 'join_lobby' (sur le canal de signalisation) */
-    function handleLobbyJoin(message) {
-        // Cet événement est principalement pour l'hôte qui reçoit le message
-        // avant que la connexion P2P ne soit établie.
-        if (localPlayer.isHost) {
-            console.log(`Nouveau joueur: ${message.playerName} (ID: ${message.playerId})`);
+    // --- LOGIQUE HÔTE / JOINER ---
+    
+    /** LOGIQUE HÔTE : Le joueur A crée la partie */
+    function createHostGame() {
+        finalizeLocalPlayerInfo();
+        localPlayer.isHost = true;
+        localPlayer.hostId = localPlayer.id; // L'hôte est son propre hôte
+        
+        connectToSignalingServer(() => {
+            const shortCode = generateShortCode(localPlayer.id);
+            $hostCodeValue.textContent = shortCode;
             
-            // 1. Ajouter le joueur à la liste locale de l'hôte (s'il n'y est pas)
-            if (!connectedPlayers.has(message.playerId)) {
-                 // S'assurer que la couleur choisie est parmi les couleurs disponibles
-                 const color = PLAYER_COLORS.find(c => c.name === message.playerColor);
-                 
-                 connectedPlayers.set(message.playerId, {
-                    id: message.playerId,
-                    name: message.playerName,
-                    colorClass: color ? `color-${color.name}` : 'color-Rouge',
-                    isHost: false,
-                    peerConnectionId: message.senderId // L'ID pour la connexion WS
-                });
-
-                updatePlayerCountDisplay();
-            }
+            // Ajouter l'hôte à sa propre liste de joueurs connectés
+            connectedPlayers.set(localPlayer.id, {
+                id: localPlayer.id,
+                name: localPlayer.name,
+                colorClass: localPlayer.colorClass,
+                isHost: true,
+            });
+            updatePlayerCountDisplay();
             
-            // 2. L'hôte démarre la création de la connexion WebRTC avec le nouveau pair
-            createOffer(message.senderId);
-        } else {
-             // Si je ne suis pas l'hôte, j'ai déjà envoyé ma demande,
-             // le message 'join_lobby' reçu est probablement un écho du serveur ou
-             // un autre joueur qui se connecte. Le non-hôte va attendre le 'lobby_state'
-             // de l'hôte après l'établissement du canal de données.
-        }
+            // Afficher le lobby
+            $step2.classList.add('hidden');
+            $lobbyInfo.classList.remove('hidden');
+            $lobbyTitle.textContent = "Lobby Hôte";
+            
+            $connectionStatus.textContent = `Statut: En attente de joueurs (Code: ${shortCode})`;
+        });
     }
     
-    /** Envoie le message de join_lobby à tous (le serveur le relaye) */
-    function sendJoinLobbyMessage() {
-        // Trouver la classe CSS de la couleur sélectionnée
-        const selectedColorName = $colorSelect.value;
-        const color = PLAYER_COLORS.find(c => c.name === selectedColorName);
-        
-        localPlayer.name = $nameInput.value;
-        localPlayer.colorName = selectedColorName;
-        localPlayer.colorClass = color ? `color-${color.name}` : 'color-Rouge';
-        
-        // Appliquer la couleur au style local pour les messages locaux/statut
-        document.body.style.setProperty('--player-color', localPlayer.colorClass ? `var(${localPlayer.colorClass})` : 'var(--color-accent-white)');
-        
-        sendSignalingMessage({
-            type: 'join_lobby',
-            playerId: localPlayer.id,
-            playerName: localPlayer.name,
-            playerColor: localPlayer.colorName,
-            senderId: localPlayer.id // S'assure que le destinataire sait qui envoie
-        });
-        
-        console.log(`Envoyé demande de join_lobby: ${localPlayer.name}`);
-        
-        // Afficher l'écran du lobby
-        document.getElementById('lobby-info').classList.remove('hidden');
-        $joinBtn.disabled = true;
-        
-        // Si je suis l'hôte, je dois attendre les connexions entrantes pour faire l'offre.
-        if (localPlayer.isHost) {
-            console.log("Vous êtes l'hôte. En attente de connexions P2P.");
+    /** LOGIQUE JOINER : Le joueur B rejoint la partie */
+    function joinGame() {
+        const hostCode = $hostCodeInput.value.toUpperCase();
+        if (hostCode.length !== 6) {
+            alert("Veuillez entrer un code de partie valide de 6 caractères.");
+            return;
         }
+
+        finalizeLocalPlayerInfo();
+        localPlayer.isHost = false;
+        
+        // On ne connaît pas l'ID complet de l'hôte, mais on utilise le code court pour cibler
+        // Le serveur de signalisation relaye le message à tous, mais l'hôte est le seul à réagir.
+        
+        connectToSignalingServer(() => {
+            $step2.classList.add('hidden');
+            $lobbyInfo.classList.remove('hidden');
+            $lobbyTitle.textContent = `Connexion au Lobby...`;
+            $hostCodeValue.textContent = hostCode; // Afficher le code entré
+            document.getElementById('start-game-btn').classList.add('hidden'); // Cacher le bouton Démarrer
+
+            $connectionStatus.textContent = "Statut: Envoi de la demande de connexion...";
+            
+            // 1. Envoyer une demande de rejoindre (au code court)
+            sendSignalingMessage({
+                type: 'request_to_join_host',
+                targetCode: hostCode, // Le host (qui a le code en mémoire) réagira
+                playerId: localPlayer.id,
+                playerName: localPlayer.name,
+                playerColorClass: localPlayer.colorClass,
+                isHost: false,
+            });
+            
+            // 2. Le Joiner attend l'offre de l'hôte (handleOffer se chargera du reste)
+        });
     }
+    
+    /** LOGIQUE HÔTE : Gère la demande de connexion du joiner (reçue via le signal server) */
+    function handleLobbyJoinRequest(message) {
+        if (!localPlayer.isHost) return;
+        
+        // 1. Vérifie si le code court correspond à mon propre code
+        const myShortCode = generateShortCode(localPlayer.id);
+        if (message.targetCode !== myShortCode) {
+            console.log(`Demande ignorée: Code ${message.targetCode} ne correspond pas au mien.`);
+            return;
+        }
+
+        // 2. Ajouter le joueur à la liste locale de l'hôte
+        if (!connectedPlayers.has(message.playerId)) {
+             connectedPlayers.set(message.playerId, {
+                id: message.playerId,
+                name: message.playerName,
+                colorClass: message.playerColorClass,
+                isHost: false,
+            });
+            console.log(`Nouveau joueur ${message.playerName} (ID: ${message.playerId}) a rejoint le lobby.`);
+            updatePlayerCountDisplay();
+        }
+        
+        // 3. L'hôte démarre la création de la connexion WebRTC avec le nouveau pair
+        createOffer(message.senderId);
+    }
+
 
     // --- LOGIQUE DU JEU ---
     
@@ -784,6 +871,9 @@
         $lobbyScreen.classList.add('hidden');
         $gameInterface.classList.remove('hidden');
         $gameStatusBar.classList.remove('hidden');
+        
+        // Appliquer la couleur au statut des points
+        $workPoints.style.color = getComputedStyle(document.documentElement).getPropertyValue('--player-color');
         
         // Focus sur la zone de saisie pour commencer à écrire
         setTimeout(() => $messageInput.focus(), 100);
@@ -797,47 +887,49 @@
     
     function startWorkPointsAccumulation() {
         // Cette fonction sera exécutée toutes les 10 secondes (TIME_TO_EARN_POINTS_MS)
+        // NOTE: Dans une vraie partie P2P, l'hôte devrait contrôler le temps et diffuser les points.
+        // Ici, chaque joueur gère ses propres points par simplicité.
         setInterval(() => {
             localPlayer.workPoints += POINTS_EARNED_PER_INTERVAL;
             $workPoints.textContent = `Points de travail: ${localPlayer.workPoints}`;
-            console.log(`Points de travail accumulés: ${localPlayer.workPoints}`);
         }, TIME_TO_EARN_POINTS_MS);
     }
 
 
     // --- GESTION DES ÉVÉNEMENTS ---
 
-    /** Vérifie si l'utilisateur peut rejoindre le lobby */
-    function checkLobbyReadiness() {
+    /** Vérifie si l'utilisateur peut passer à l'étape 2 */
+    function checkStep1Readiness() {
         const nameValid = $nameInput.value.trim().length > 0;
-        $joinBtn.disabled = !nameValid || ws === null || ws.readyState !== WebSocket.OPEN;
+        $nextStepBtn.disabled = !nameValid || userId === null; // Dépend de Firebase Auth
     }
     
-    $nameInput.addEventListener('input', checkLobbyReadiness);
-
-    $joinBtn.addEventListener('click', () => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            // Le premier joueur à cliquer sur "Rejoindre" devient l'hôte par défaut
-            // dans cette implémentation simple.
-            localPlayer.isHost = true;
-            connectToSignalingServer(true)
-                .then(() => sendJoinLobbyMessage())
-                .catch(err => console.error("Échec de la connexion et de l'envoi du message de lobby.", err));
-        } else {
-             // Si WS est déjà ouvert, cela signifie que je me suis déjà connecté,
-             // mais je n'ai pas envoyé le message de lobby.
-             sendJoinLobbyMessage();
+    $nameInput.addEventListener('input', checkStep1Readiness);
+    
+    $nextStepBtn.addEventListener('click', () => {
+        if (!$nextStepBtn.disabled) {
+            finalizeLocalPlayerInfo();
+            $step1.classList.add('hidden');
+            $step2.classList.remove('hidden');
         }
     });
 
+    $createHostBtn.addEventListener('click', createHostGame);
+    
+    $hostCodeInput.addEventListener('input', () => {
+        const codeValid = $hostCodeInput.value.trim().length === 6;
+        $joinGameBtn.disabled = !codeValid;
+    });
+
+    $joinGameBtn.addEventListener('click', joinGame);
+
     $startBtn.addEventListener('click', () => {
         if (localPlayer.isHost && connectedPlayers.size >= MIN_PLAYERS) {
-            // L'hôte envoie un message P2P à tout le monde pour démarrer la partie
-            broadcastData({ type: 'start_game' });
-            // L'hôte démarre aussi sa partie
+            // 1. L'hôte démarre sa propre partie
             startGame();
+            // 2. L'hôte envoie un message P2P à tout le monde pour démarrer la partie
+            broadcastData({ type: 'start_game' });
         } else {
-            // Afficher un message d'erreur/avertissement (modal ou console)
             console.warn("Impossible de démarrer la partie : pas assez de joueurs ou vous n'êtes pas l'hôte.");
         }
     });
@@ -857,11 +949,10 @@
                     text: messageText,
                 };
                 
-                // 3. Diffuser à tous les pairs connectés
+                // 3. Diffuser à tous les pairs connectés (exclut l'envoi au serveur de signalisation)
                 broadcastData(chatMessage);
                 
                 $messageInput.value = '';
-                // S'assurer que le focus est maintenu après l'envoi
                 $messageInput.focus(); 
             }
         }
@@ -869,14 +960,8 @@
     
     // --- INITIALISATION ---
     
-    // Initialisation de Firebase et de l'état du lobby
     populateColorSelect();
     initFirebase();
-    
-    // Pour les non-hôtes, si la connexion au serveur de signalisation est déjà faite
-    // (par exemple, si la page a été rechargée), on tente de rejoindre sans être hôte.
-    // Pour simplifier, le joueur doit cliquer sur "Rejoindre le Lobby" pour initier la connexion
-    // et déterminer son rôle (hôte ou non).
     
 </script>
 </body>
