@@ -6,7 +6,7 @@
     <title>Épuisement Professionnel - Chat WebSocket</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;600;700;800&display=swap');
         :root {
             --bg-dark: #121212;
             --bg-header: #1e1e1e;
@@ -77,11 +77,9 @@
 
     <!-- Barre de Progression et Score -->
     <header class="header-bar p-3 border-b border-gray-700">
-        <!-- Ligne 1: Barre de progression (Objectif de manche) -->
         <div class="h-2 w-full bg-gray-500 rounded-full mb-2 overflow-hidden">
             <div id="progress-bar-fill" class="h-full bg-yellow-400 transition-all duration-500" style="width: 0%;"></div>
         </div>
-        <!-- Ligne 2: Compteurs -->
         <div class="flex justify-between items-center text-sm">
             <div id="countdown" class="text-gray-400">Temps restant: --:--</div>
             <div id="work-points" class="font-extrabold p-1 rounded-lg transition-all duration-300">
@@ -105,13 +103,11 @@
 
     <!-- Conteneur de la Conversation -->
     <div id="chat-container">
-        <!-- Les messages seront ajoutés ici par JavaScript -->
         <div class="text-center text-gray-500 mt-4">Connexion au serveur de signalisation...</div>
     </div>
 
     <!-- Message d'instruction (au-dessus de la zone de saisie) -->
     <div id="instruction-message" class="p-2 text-center text-sm font-semibold text-yellow-400 bg-gray-800 hidden">
-        <!-- Ceci affichera l'instruction pour l'utilisateur (ex: "Entrer votre nom") -->
     </div>
 
     <!-- Zone de Saisie de Message -->
@@ -147,12 +143,20 @@
         const ACCENT_COLOR_DEFAULT = '#E0E0E0';
         const WORK_POINTS_PER_TICK = 10;
         const WORK_TICK_INTERVAL_MS = 10000;
-        const MIN_PLAYERS_TO_START = 4; // Minimum 4 joueurs (hôte inclus)
+        const MIN_PLAYERS_TO_START = 4; 
         
         const ALL_PLAYER_COLORS = [
             "#FFC7C7", "#FFD580", "#A0C4FF", "#C3A0FF",
             "#A0FFC4", "#FFC7D8", "#A0FFFF", "#FFFFB2"
         ];
+        
+        // Configuration STUN/TURN pour WebRTC. Les STUN publics sont suffisants pour le moment.
+        const PEER_CONFIG = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
 
         // --- Variables d'État du Jeu ---
         let ws = null;
@@ -166,15 +170,18 @@
             workPoints: 0,
             hasName: false,
             isHost: false,
-            gameId: null, // Short 4-digit code for the game lobby
-            isLobbyPhase: false // True if the player is in the "HOTE/REJOINDRE" flow
+            gameId: null, // Short 4-digit code
+            isLobbyPhase: false 
         };
 
         let allPlayers = {};
         allPlayers[PNJ_ID] = { id: PNJ_ID, name: PNJ_NAME, color: ACCENT_COLOR_DEFAULT };
 
-
-        // --- Références DOM ---
+        // --- Variables d'État WebRTC ---
+        // Clés: ID de l'autre joueur (UUID), Valeurs: { pc: RTCPeerConnection, dataChannel: RTCDataChannel }
+        const peerConnections = {}; 
+        
+        // --- Références DOM (Déjà définies) ---
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendButton = document.getElementById('send-button');
@@ -189,16 +196,10 @@
 
         // --- Fonctions Utilitaires ---
 
-        /**
-         * Génère un code de jeu de 4 chiffres aléatoires.
-         */
         function generateGameCode() {
             return Math.floor(1000 + Math.random() * 9000).toString();
         }
 
-        /**
-         * Met à jour l'affichage du lobby pour l'hôte.
-         */
         function updateHostLobbyStatus() {
             if (!localPlayerData.isHost || !localPlayerData.isLobbyPhase) {
                 lobbyStatusHost.classList.add('hidden');
@@ -208,15 +209,16 @@
             lobbyStatusHost.classList.remove('hidden');
             hostCodeDisplay.textContent = localPlayerData.gameId || '----';
 
-            // Compter les joueurs qui se sont identifiés (ont un nom)
+            // Compter les joueurs identifiés avec le MÊME gameId
             const identifiedPlayers = Object.values(allPlayers).filter(p => 
                 p.id !== PNJ_ID && p.hasName && p.gameId === localPlayerData.gameId
             ).length;
 
             playerCountDisplay.textContent = `${identifiedPlayers}/${MIN_PLAYERS_TO_START}`;
             
-            // Activer ou désactiver le bouton Démarrer
-            if (identifiedPlayers >= MIN_PLAYERS_TO_START) {
+            const canStart = identifiedPlayers >= MIN_PLAYERS_TO_START;
+
+            if (canStart) {
                 startGameButton.disabled = false;
                 startGameButton.classList.remove('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
                 startGameButton.classList.add('bg-green-500', 'hover:bg-green-600', 'text-white');
@@ -225,14 +227,10 @@
                 startGameButton.disabled = true;
                 startGameButton.classList.add('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
                 startGameButton.classList.remove('bg-green-500', 'hover:bg-green-600', 'text-white');
-                startGameContent = identifiedPlayers < MIN_PLAYERS_TO_START ? `Démarrer (${MIN_PLAYERS_TO_START} min)` : 'Démarrer la partie';
                 startGameButton.textContent = `Démarrer (${MIN_PLAYERS_TO_START} min)`;
             }
         }
-
-        /**
-         * Affiche un message système au milieu de l'écran (seulement pour le joueur local).
-         */
+        
         function renderSystemMessage(text, isHostOnly = false) {
              if (isHostOnly && !localPlayerData.isHost) return;
 
@@ -330,12 +328,218 @@
             }
         }
         
+        // --- Fonctions WebRTC (P2P) ---
+
+        /**
+         * Crée une RTCPeerConnection pour l'autre joueur.
+         * @param {string} peerId ID de l'autre joueur (UUID).
+         * @param {boolean} isHost True si nous sommes l'hôte/l'offreur.
+         * @returns {RTCPeerConnection}
+         */
+        function createPeerConnection(peerId, isHost) {
+            console.log(`[WebRTC] Création de la connexion P2P avec ${peerId}. Hôte: ${isHost}`);
+            
+            if (peerConnections[peerId] && peerConnections[peerId].pc) {
+                console.warn(`[WebRTC] Connexion P2P avec ${peerId} existe déjà.`);
+                return peerConnections[peerId].pc;
+            }
+
+            const pc = new RTCPeerConnection(PEER_CONFIG);
+            const connectionInfo = { pc: pc, dataChannel: null };
+            peerConnections[peerId] = connectionInfo;
+
+
+            // 1. Événement ICE Candidate: Envoie des informations de routage à l'autre pair via le serveur de signalisation
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendWebSocketMessage({
+                        type: 'signal',
+                        gameId: localPlayerData.gameId,
+                        senderId: currentUserId,
+                        receiverId: peerId,
+                        signal: {
+                            type: 'candidate',
+                            candidate: event.candidate
+                        }
+                    });
+                }
+            };
+
+            // 2. Événement de changement d'état de connexion
+            pc.oniceconnectionstatechange = () => {
+                console.log(`[WebRTC] Statut de connexion P2P (${peerId}): ${pc.iceConnectionState}`);
+                 if (pc.iceConnectionState === 'connected') {
+                    renderSystemMessage(`Connexion P2P réussie avec ${allPlayers[peerId]?.name || peerId}!`, localPlayerData.isHost);
+                 }
+                 if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') {
+                    console.warn(`[WebRTC] Connexion P2P perdue avec ${peerId}.`);
+                 }
+            };
+            
+            // 3. Gestion du Data Channel (si nous ne sommes PAS l'hôte, nous attendons le canal de données)
+            if (!isHost) {
+                pc.ondatachannel = (event) => {
+                    const dataChannel = event.channel;
+                    connectionInfo.dataChannel = dataChannel;
+                    setupDataChannel(dataChannel, peerId);
+                };
+            }
+
+            return pc;
+        }
+        
+        /**
+         * Configure le canal de données (envoi/réception)
+         */
+        function setupDataChannel(dataChannel, peerId) {
+            console.log(`[WebRTC] Data Channel créé/reçu pour ${peerId}`);
+
+            dataChannel.onopen = () => {
+                console.log(`[WebRTC] Canal de données ouvert avec ${peerId}.`);
+                // L'hôte peut envoyer l'état du lobby maintenant
+                if (localPlayerData.isHost) {
+                     // L'hôte envoie son état de jeu à ce pair pour synchronisation
+                     // (Ce serait ici que le chat P2P pourrait commencer)
+                     // dataChannel.send(JSON.stringify({ type: 'lobby_sync', players: allPlayers }));
+                }
+            };
+
+            dataChannel.onmessage = (event) => {
+                // Gestion des messages reçus via P2P (futur chat/état de jeu)
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log(`[P2P MSG de ${peerId}]:`, message);
+                    // Exemple : si le chat passe en P2P, on traiterait les messages ici
+                } catch (e) {
+                    console.error("[P2P] Erreur de parsage P2P:", e);
+                }
+            };
+
+            dataChannel.onclose = () => {
+                console.log(`[WebRTC] Canal de données fermé avec ${peerId}.`);
+            };
+        }
+
+
+        /**
+         * Tente d'établir une connexion P2P en tant qu'HÔTE (Offreur)
+         * @param {string} peerId ID du pair à contacter
+         */
+        async function handleJoinAsHost(peerId) {
+            const pc = createPeerConnection(peerId, true);
+            
+            // Crée le Data Channel (seul l'offreur le fait)
+            const dataChannel = pc.createDataChannel("chatChannel");
+            peerConnections[peerId].dataChannel = dataChannel;
+            setupDataChannel(dataChannel, peerId);
+
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                
+                // Envoie l'offre (SDP) au serveur de signalisation
+                sendWebSocketMessage({
+                    type: 'signal',
+                    gameId: localPlayerData.gameId,
+                    senderId: currentUserId,
+                    receiverId: peerId,
+                    signal: {
+                        type: 'offer',
+                        sdp: pc.localDescription
+                    }
+                });
+                console.log(`[WebRTC Hôte] Offre envoyée à ${peerId}.`);
+            } catch (error) {
+                console.error(`[WebRTC Hôte] Erreur lors de la création de l'offre pour ${peerId}:`, error);
+            }
+        }
+
+        /**
+         * Tente d'établir une connexion P2P en tant que Joueur (Répondeur)
+         * @param {string} hostId ID de l'hôte (Offreur)
+         * @param {object} offer L'objet RTCSessionDescription de l'offre
+         */
+        async function handleJoinAsPeer(hostId, offer) {
+            const pc = createPeerConnection(hostId, false);
+
+            try {
+                // 1. Définir l'offre comme description distante
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+                
+                // 2. Créer la réponse
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                // 3. Envoyer la réponse (SDP) au serveur de signalisation
+                sendWebSocketMessage({
+                    type: 'signal',
+                    gameId: localPlayerData.gameId,
+                    senderId: currentUserId,
+                    receiverId: hostId,
+                    signal: {
+                        type: 'answer',
+                        sdp: pc.localDescription
+                    }
+                });
+                console.log(`[WebRTC Joueur] Réponse envoyée à l'hôte ${hostId}.`);
+            } catch (error) {
+                console.error(`[WebRTC Joueur] Erreur lors de la gestion de l'offre de ${hostId}:`, error);
+            }
+        }
+        
+        /**
+         * Gère les messages de signalisation WebRTC (offer, answer, candidate).
+         */
+        async function handleSignalMessage(data) {
+            const senderId = data.senderId;
+            const signal = data.signal;
+            
+            // 1. Initialiser la connexion P2P si elle n'existe pas
+            let pc;
+            // Si c'est une 'offer', le joueur n'a pas encore de connexion avec cet hôte. Il crée une nouvelle connexion.
+            // Si c'est une 'answer' ou 'candidate', la connexion doit déjà exister (l'hôte l'a déjà créée).
+            if (signal.type === 'offer') {
+                pc = createPeerConnection(senderId, false);
+            } else if (peerConnections[senderId]) {
+                 pc = peerConnections[senderId].pc;
+            } else {
+                 console.warn(`[WebRTC] Signal reçu de ${senderId} mais pas de PeerConnection existante. Ignoré.`);
+                 return;
+            }
+
+            // 2. Traiter le type de signal
+            if (signal.type === 'offer' && !localPlayerData.isHost) {
+                // Uniquement les joueurs reçoivent et répondent aux offres
+                renderSystemMessage(`Offre de connexion reçue de l'hôte.`);
+                await handleJoinAsPeer(senderId, signal.sdp);
+            } else if (signal.type === 'answer' && localPlayerData.isHost) {
+                // Uniquement l'hôte reçoit et traite les réponses
+                renderSystemMessage(`Réponse de connexion reçue de ${allPlayers[senderId]?.name || senderId}.`);
+                await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+            } else if (signal.type === 'candidate') {
+                 // Les deux parties reçoivent les ICE candidates
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    console.log(`[WebRTC] ICE Candidate ajouté de ${senderId}.`);
+                } catch (e) {
+                    // C'est normal d'avoir des erreurs si le SDP est en cours de définition
+                    console.error("[WebRTC] Erreur lors de l'ajout de l'ICE Candidate:", e);
+                }
+            } else {
+                 // L'hôte ignore les offres, les joueurs ignorent les réponses
+                 console.warn(`[WebRTC] Signal de type ${signal.type} ignoré par le joueur ${localPlayerData.isHost ? 'Hôte' : 'Joueur'}.`);
+            }
+        }
+
+
         // --- Fonctions WebSocket ---
 
         function sendWebSocketMessage(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 try {
+                    // Ajout du gameId pour le routage du serveur de signalisation
                     data.originatorId = currentUserId; 
+                    data.gameId = localPlayerData.gameId;
                     ws.send(JSON.stringify(data));
                 } catch (error) {
                     console.error("Erreur lors de l'envoi du message WebSocket:", error);
@@ -355,7 +559,7 @@
                 text: text.trim(),
                 color: localPlayerData.color,
                 timestamp: Date.now(),
-                gameId: localPlayerData.gameId // Ajouter le gameId pour le filtrage futur
+                gameId: localPlayerData.gameId
             };
             
             renderMessages(message);
@@ -385,6 +589,13 @@
                 return;
             }
 
+            // Si c'est un message de signalisation WebRTC, on le traite
+            if (data.type === 'signal' && data.gameId === localPlayerData.gameId) {
+                handleSignalMessage(data);
+                return;
+            }
+
+            // On ignore ses propres messages Chat/PNJ
             if (data.senderId === currentUserId && data.type !== 'pnj_init') { 
                 return; 
             }
@@ -394,27 +605,27 @@
                 case 'pnj_chat':
                     renderMessages(data);
                     break;
-                case 'join': // Initial handshake
-                case 'player_update': // Player state update (name, color, score)
-                    // Gestion de la mise à jour des joueurs
+                case 'join':
+                case 'player_update':
                     const newPlayer = data.player;
                     const isNewPlayer = !allPlayers[newPlayer.id];
 
+                    // Mise à jour de l'état local des joueurs
                     allPlayers[newPlayer.id] = newPlayer;
                     console.log(`Joueur mis à jour: ${newPlayer.name}. Total joueurs suivis: ${Object.keys(allPlayers).length}`);
                     
-                    // Si on est dans le lobby (HOTE ou REJOINDRE)
-                    if (localPlayerData.isLobbyPhase) {
-                        // 1. L'hôte met à jour son statut de lobby
+                    if (localPlayerData.isLobbyPhase && newPlayer.gameId === localPlayerData.gameId) {
+                        // 1. L'hôte met à jour son statut de lobby (et crée l'offre)
                         if (localPlayerData.isHost) {
                             updateHostLobbyStatus();
-                            // Envoi d'une notification à l'hôte si c'est un nouveau joueur identifié
-                            if (newPlayer.hasName && newPlayer.id !== currentUserId && newPlayer.gameId === localPlayerData.gameId) {
-                                renderSystemMessage(`${newPlayer.name} a rejoint le lobby.`, true);
+                            // Si un nouveau joueur identifié arrive, l'hôte lui envoie une offre P2P !
+                            if (newPlayer.hasName && newPlayer.id !== currentUserId && !peerConnections[newPlayer.id]) {
+                                renderSystemMessage(`${newPlayer.name} a rejoint le lobby. Tentative de P2P...`, true);
+                                handleJoinAsHost(newPlayer.id); // L'hôte initialise la connexion P2P
                             }
                         }
 
-                        // 2. Si un joueur arrive et que nous sommes identifiés, nous lui renvoyons nos infos pour synchro
+                        // 2. Si un joueur arrive, nous lui renvoyons nos infos pour synchro
                         if (localPlayerData.hasName && newPlayer.id !== currentUserId) {
                             sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                         }
@@ -424,10 +635,8 @@
 
                 case 'game_start':
                     renderSystemMessage(`La partie ${data.gameId} est DÉMARRÉE par ${data.hostName} !`);
-                    // Ici irait la vraie logique de démarrage de jeu (masquer le chat, afficher la tâche, etc.)
                     localPlayerData.isLobbyPhase = false;
                     lobbyStatusHost.classList.add('hidden');
-                    // On peut aussi mettre le chat en mode lecture seule si besoin
                     break;
 
                 case 'pnj_init':
@@ -439,7 +648,7 @@
                      break;
 
                 default:
-                    console.log(`Message de type inconnu/WebRTC reçu: ${data.type}`);
+                    console.log(`Message de type inconnu/WebRTC ignoré: ${data.type}`);
             }
         }
 
@@ -455,47 +664,50 @@
             } 
             
             if (command === 'HOTE') {
-                if (localPlayerData.isLobbyPhase) return; // Éviter de recréer si déjà en cours
+                if (localPlayerData.isLobbyPhase && localPlayerData.isHost) return; 
 
+                // Fermer toutes les connexions P2P existantes si changement de rôle
+                Object.values(peerConnections).forEach(conn => conn.pc.close());
+                
                 localPlayerData.isHost = true;
-                localPlayerData.gameId = generateGameCode(); // NOUVEAU: Code court
+                localPlayerData.gameId = generateGameCode();
                 localPlayerData.isLobbyPhase = true;
                 
-                // Mise à jour de l'état partagé (très important de le faire après avoir set le gameId)
                 sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                 
                 sendPatroneMessage("Vous êtes l'hôte. Veuillez partager ce code de session pour que les autres joueurs puissent vous rejoindre.");
                 showInstruction(`Votre CODE DE SESSION: ${localPlayerData.gameId}`);
                 
-                // Forcer la mise à jour UI Hôte
                 updateHostLobbyStatus();
             } else if (command === 'REJOINDRE') {
-                if (localPlayerData.isLobbyPhase) return; // Éviter de recréer si déjà en cours
+                if (localPlayerData.isLobbyPhase && !localPlayerData.isHost) return;
+
+                // Fermer toutes les connexions P2P existantes si changement de rôle
+                Object.values(peerConnections).forEach(conn => conn.pc.close());
 
                 localPlayerData.isHost = false;
+                localPlayerData.gameId = null; // Réinitialiser le code de jeu du joueur
                 localPlayerData.isLobbyPhase = true;
 
-                // Mise à jour de l'état partagé
                 sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
 
                 sendPatroneMessage("Veuillez entrer le code de session que votre hôte vous a fourni.");
                 showInstruction("Entrez le CODE DE SESSION à 4 chiffres.");
+                updateHostLobbyStatus(); // Cache le statut de l'hôte
             } else if (localPlayerData.isLobbyPhase && !localPlayerData.isHost && instructionMessage.textContent.includes("CODE DE SESSION")) {
-                 // Logique d'entrée de l'ID de session (vérification 4 chiffres)
                  if (/^\d{4}$/.test(text.trim())) {
                      localPlayerData.gameId = text.trim();
                      hideInstruction();
                      
-                     // Mise à jour de l'état partagé avec le gameId
                      sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
 
-                     renderSystemMessage(`Tentative de rejoindre la partie: ${localPlayerData.gameId}.`);
+                     renderSystemMessage(`Tentative de rejoindre la partie: ${localPlayerData.gameId}. En attente de l'hôte...`);
                      showInstruction("Connexion au groupe établie. En attente de l'hôte...");
                  } else {
                     sendPatroneMessage("Ce code n'est pas valide. Veuillez entrer un code à 4 chiffres.");
                  }
             } else {
-                // Message de chat normal
+                // Message de chat normal (sera envoyé via WebSocket pour le moment)
                 sendChatMessage(text);
             }
         }
@@ -513,7 +725,6 @@
                 updatePlayerAccent(localPlayerData.color);
                 hideInstruction();
                 
-                // Envoi de l'état du joueur (très important pour partager le nom/couleur)
                 sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                 sendChatMessage(`Bonjour, je suis ${cleanName} !`);
                 
@@ -528,7 +739,8 @@
         }
 
         function startGame() {
-            if (!localPlayerData.isHost || !startGameButton.disabled) {
+            // Logique de démarrage seulement si l'hôte est prêt
+            if (localPlayerData.isHost && !startGameButton.disabled) {
                 const message = {
                     type: 'game_start',
                     senderId: currentUserId,
@@ -537,12 +749,11 @@
                     timestamp: Date.now()
                 };
                 
-                sendWebSocketMessage(message);
+                // Envoie un message au serveur pour informer tous les joueurs du même gameId
+                sendWebSocketMessage(message); 
                 renderSystemMessage("VOUS AVEZ DÉMARRÉ LA PARTIE !");
-                // Le message sera reçu par tous, y compris l'hôte, et déclenchera la logique 'game_start'
             }
         }
-
 
         function startWorkPointsTicker() {
             if (window.workTicker) return; 
@@ -553,7 +764,7 @@
                     updateWorkPointsDisplay(localPlayerData.workPoints);
                 }
             }, WORK_TICK_INTERVAL_MS);
-            console.log(`Le générateur de points de travail est actif: ${WORK_POINTS_PER_TICK} points toutes les ${WORK_TICK_INTERVAL_MS / 1000} secondes.`);
+            console.log(`Le générateur de points de travail est actif.`);
         }
 
 
@@ -584,26 +795,19 @@
                 chatContainer.innerHTML = '<div class="text-center text-green-400 mt-4">Connexion établie. En attente d\'autres joueurs...</div>';
                 reconnectAttempts = 0; 
                 
-                // 1. Envoyer le statut de connexion (pour se faire connaître)
                 sendWebSocketMessage({ type: 'join', player: localPlayerData });
-                
-                // 2. Demander l'état du PNJ/jeu 
                 sendWebSocketMessage({ type: 'pnj_init', senderId: currentUserId });
 
-                // 3. Si le joueur est déjà identifié, on lui redemande sa prochaine action
+                // Retrouver l'état du lobby si besoin
                 if (localPlayerData.hasName) {
-                    // Si le joueur est hôte et a déjà un code, il le partage à nouveau
-                    if (localPlayerData.isHost && localPlayerData.gameId) {
-                        localPlayerData.isLobbyPhase = true;
-                        showInstruction(`Votre CODE DE SESSION: ${localPlayerData.gameId}. Tapez 'HOTE' pour le réafficher si besoin.`);
+                    if (localPlayerData.isLobbyPhase) {
+                        const message = localPlayerData.isHost ? 
+                            `Votre CODE DE SESSION: ${localPlayerData.gameId}.` : 
+                            `Connecté à la partie ${localPlayerData.gameId}. En attente de l'hôte...`;
+                        showInstruction(message);
                         updateHostLobbyStatus();
-                    } else if (!localPlayerData.isHost && localPlayerData.gameId) {
-                        localPlayerData.isLobbyPhase = true;
-                        showInstruction(`Connecté à la partie ${localPlayerData.gameId}. En attente de l'hôte...`);
                     } else {
-                        // S'il est identifié mais n'a pas encore choisi HOTE/REJOINDRE
-                        sendPatroneMessage("Voulez-vous être HÔTE ou REJOINDRE une partie ?");
-                        showInstruction("Tapez 'HOTE' ou 'REJOINDRE'.");
+                         // Si la partie est démarrée, on n'affiche rien ici
                     }
                 }
             };
@@ -629,7 +833,7 @@
             if (text.trim() !== "") {
                 processUserInput(text);
                 messageInput.value = ""; 
-                // La sélection automatique est gérée par le `focus()` ci-dessous
+                messageInput.focus();
             }
         }
 
@@ -643,16 +847,13 @@
         window.onload = () => {
             updatePlayerAccent(localPlayerData.color); 
             
-            // Événements
             sendButton.addEventListener('click', handleSendClick);
             messageInput.addEventListener('keydown', handleInputKeypress);
             startGameButton.addEventListener('click', startGame);
 
-            // Démarrage du système
             initializeWebSocket();
             startWorkPointsTicker(); 
             
-            // Assurer le focus sur l'entrée après le chargement
             messageInput.focus();
         };
 
