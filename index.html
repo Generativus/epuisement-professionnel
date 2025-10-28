@@ -8,12 +8,12 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
         :root {
-            --bg-dark: #121212; /* Noir très foncé */
-            --bg-header: #1e1e1e; /* Gris foncé pour les barres */
-            --text-light: #E0E0E0; /* Gris très clair */
-            --bubble-user: #4CAF50; /* Vert foncé/claire pour l'utilisateur */
-            --bubble-other: #333333; /* Gris foncé pour les autres/PNJ */
-            --accent-player: #E0E0E0; /* Accent par défaut (sera la couleur du joueur) */
+            --bg-dark: #121212;
+            --bg-header: #1e1e1e;
+            --text-light: #E0E0E0;
+            --bubble-user: #4CAF50;
+            --bubble-other: #333333;
+            --accent-player: #E0E0E0;
         }
         body {
             font-family: 'Inter', sans-serif;
@@ -45,23 +45,20 @@
             border-radius: 1rem;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
-        /* Message de l'utilisateur (à droite) */
         .user-message {
             background-color: var(--bubble-user);
             align-self: flex-end;
             color: #fff;
             border-bottom-right-radius: 0.25rem;
         }
-        /* Message des autres (à gauche) */
         .other-message {
             background-color: var(--bubble-other);
             align-self: flex-start;
             border-bottom-left-radius: 0.25rem;
             border: 1px solid var(--accent-player);
         }
-        /* Style pour la Patrone (PNJ) */
         .pnj-message {
-            background-color: #2a2a2a; /* Encore plus foncé */
+            background-color: #2a2a2a;
             align-self: flex-start;
             border-bottom-left-radius: 0.25rem;
             border: 1px solid var(--accent-player);
@@ -92,6 +89,19 @@
             </div>
         </div>
     </header>
+
+    <!-- Statut du Lobby (visible uniquement par l'hôte) -->
+    <div id="lobby-status-host" class="p-3 bg-gray-900 border-b border-gray-700 hidden flex justify-between items-center">
+        <div id="lobby-info" class="text-sm">
+            <span class="text-gray-400">Code: </span><span id="host-code" class="font-bold text-yellow-400">----</span> 
+            | 
+            <span class="text-gray-400">Joueurs: </span><span id="player-count" class="font-bold text-white">1/4</span>
+        </div>
+        <button id="start-game-button" disabled
+                class="bg-gray-700 text-gray-400 font-semibold py-1 px-4 rounded-lg transition duration-150 cursor-not-allowed">
+            Démarrer (4 min)
+        </button>
+    </div>
 
     <!-- Conteneur de la Conversation -->
     <div id="chat-container">
@@ -131,32 +141,23 @@
     
     <script>
         // --- CONSTANTES ET CONFIGURATION GLOBALE ---
-        // L'URL de votre serveur Render pour le signaling WebRTC
         const SIGNALING_SERVER_URL = 'wss://webrtc-epuisement-professionnel.onrender.com';
-        
         const PNJ_ID = 'patrone';
         const PNJ_NAME = 'Patrone';
         const ACCENT_COLOR_DEFAULT = '#E0E0E0';
         const WORK_POINTS_PER_TICK = 10;
         const WORK_TICK_INTERVAL_MS = 10000;
-
-        // Couleurs pâles demandées (Hex Codes)
+        const MIN_PLAYERS_TO_START = 4; // Minimum 4 joueurs (hôte inclus)
+        
         const ALL_PLAYER_COLORS = [
-            "#FFC7C7", // Rouge pâle
-            "#FFD580", // Orange pâle
-            "#A0C4FF", // Bleu pâle
-            "#C3A0FF", // Mauve pâle
-            "#A0FFC4", // Vert pâle
-            "#FFC7D8", // Rose pâle
-            "#A0FFFF", // Turquoise
-            "#FFFFB2"  // Jaune
+            "#FFC7C7", "#FFD580", "#A0C4FF", "#C3A0FF",
+            "#A0FFC4", "#FFC7D8", "#A0FFFF", "#FFFFB2"
         ];
 
         // --- Variables d'État du Jeu ---
         let ws = null;
-        // Tente de récupérer l'ID de session stocké, sinon en génère un nouveau
         let currentUserId = localStorage.getItem('userId') || crypto.randomUUID(); 
-        localStorage.setItem('userId', currentUserId); // Stocke pour la persistance
+        localStorage.setItem('userId', currentUserId);
         
         let localPlayerData = {
             id: currentUserId,
@@ -165,9 +166,10 @@
             workPoints: 0,
             hasName: false,
             isHost: false,
-            gameId: null 
+            gameId: null, // Short 4-digit code for the game lobby
+            isLobbyPhase: false // True if the player is in the "HOTE/REJOINDRE" flow
         };
-        // État de tous les joueurs (mis à jour par WebSocket)
+
         let allPlayers = {};
         allPlayers[PNJ_ID] = { id: PNJ_ID, name: PNJ_NAME, color: ACCENT_COLOR_DEFAULT };
 
@@ -180,53 +182,98 @@
         const workPointsDisplay = document.getElementById('work-points-value');
         const workPointsContainer = document.getElementById('work-points');
         const rootStyle = document.documentElement.style;
-
+        const lobbyStatusHost = document.getElementById('lobby-status-host');
+        const hostCodeDisplay = document.getElementById('host-code');
+        const playerCountDisplay = document.getElementById('player-count');
+        const startGameButton = document.getElementById('start-game-button');
 
         // --- Fonctions Utilitaires ---
 
         /**
-         * Met à jour la couleur d'accent du joueur dans l'interface.
+         * Génère un code de jeu de 4 chiffres aléatoires.
          */
+        function generateGameCode() {
+            return Math.floor(1000 + Math.random() * 9000).toString();
+        }
+
+        /**
+         * Met à jour l'affichage du lobby pour l'hôte.
+         */
+        function updateHostLobbyStatus() {
+            if (!localPlayerData.isHost || !localPlayerData.isLobbyPhase) {
+                lobbyStatusHost.classList.add('hidden');
+                return;
+            }
+
+            lobbyStatusHost.classList.remove('hidden');
+            hostCodeDisplay.textContent = localPlayerData.gameId || '----';
+
+            // Compter les joueurs qui se sont identifiés (ont un nom)
+            const identifiedPlayers = Object.values(allPlayers).filter(p => 
+                p.id !== PNJ_ID && p.hasName && p.gameId === localPlayerData.gameId
+            ).length;
+
+            playerCountDisplay.textContent = `${identifiedPlayers}/${MIN_PLAYERS_TO_START}`;
+            
+            // Activer ou désactiver le bouton Démarrer
+            if (identifiedPlayers >= MIN_PLAYERS_TO_START) {
+                startGameButton.disabled = false;
+                startGameButton.classList.remove('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
+                startGameButton.classList.add('bg-green-500', 'hover:bg-green-600', 'text-white');
+                startGameButton.textContent = 'Démarrer la partie';
+            } else {
+                startGameButton.disabled = true;
+                startGameButton.classList.add('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
+                startGameButton.classList.remove('bg-green-500', 'hover:bg-green-600', 'text-white');
+                startGameContent = identifiedPlayers < MIN_PLAYERS_TO_START ? `Démarrer (${MIN_PLAYERS_TO_START} min)` : 'Démarrer la partie';
+                startGameButton.textContent = `Démarrer (${MIN_PLAYERS_TO_START} min)`;
+            }
+        }
+
+        /**
+         * Affiche un message système au milieu de l'écran (seulement pour le joueur local).
+         */
+        function renderSystemMessage(text, isHostOnly = false) {
+             if (isHostOnly && !localPlayerData.isHost) return;
+
+             const messageWrapper = document.createElement('div');
+             messageWrapper.className = 'flex justify-center my-2';
+             
+             const systemMessage = document.createElement('div');
+             systemMessage.className = 'text-xs text-gray-500 bg-gray-700 px-3 py-1 rounded-full shadow-md';
+             systemMessage.textContent = text;
+             
+             messageWrapper.appendChild(systemMessage);
+             chatContainer.appendChild(messageWrapper);
+             chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
         function updatePlayerAccent(color) {
             rootStyle.setProperty('--accent-player', color);
             workPointsContainer.style.backgroundColor = color;
             workPointsContainer.style.color = '#121212';
         }
 
-        /**
-         * Met à jour l'affichage des points de travail.
-         */
         function updateWorkPointsDisplay(points) {
             localPlayerData.workPoints = points;
             workPointsDisplay.textContent = points;
         }
 
-        /**
-         * Affiche un message d'instruction au-dessus de la zone de saisie.
-         */
         function showInstruction(text) {
             instructionMessage.textContent = text;
             instructionMessage.classList.remove('hidden');
         }
 
-        /**
-         * Cache le message d'instruction.
-         */
         function hideInstruction() {
             instructionMessage.classList.add('hidden');
         }
 
-        /**
-         * Ajoute un message à l'interface utilisateur.
-         */
         function renderMessages(messageData) {
             const isScrolledToBottom = chatContainer.scrollHeight - chatContainer.clientHeight <= chatContainer.scrollTop + 1;
             
-            // 1. Conteneur du message (flexbox)
             const isUser = messageData.senderId === currentUserId;
             const isPNJ = messageData.senderId === PNJ_ID;
             
-            // Info joueur (PNJ ou autre joueur)
             const senderData = allPlayers[messageData.senderId] || { 
                 name: messageData.senderName, 
                 color: messageData.color || ACCENT_COLOR_DEFAULT
@@ -235,7 +282,6 @@
             const messageWrapper = document.createElement('div');
             messageWrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
 
-            // 2. Bulle de message
             const bubble = document.createElement('div');
             let bubbleClasses = 'message-bubble max-w-xs sm:max-w-md';
 
@@ -248,22 +294,18 @@
             }
             bubble.className = bubbleClasses;
             
-            // Appliquer la bordure/accent pour les autres joueurs et la Patrone
             if (!isUser) {
                  bubble.style.borderColor = senderData.color;
             }
 
-            // 3. Nom de l'expéditeur
             const senderNameElement = document.createElement('div');
             senderNameElement.className = `text-xs font-bold mb-0.5 ${isUser ? 'text-right' : 'text-left'}`;
             senderNameElement.style.color = senderData.color;
             senderNameElement.textContent = senderData.name;
 
-            // 4. Texte du message
             const textElement = document.createElement('p');
             textElement.className = 'text-sm break-words';
             
-            // Remplacer les noms des joueurs dans le texte par leur couleur (simulé)
             let formattedText = messageData.text;
             Object.values(allPlayers).forEach(player => {
                 if (player.name && player.name !== PNJ_NAME) {
@@ -273,19 +315,16 @@
             });
             textElement.innerHTML = formattedText;
 
-            // 5. Temps du message
             const timeElement = document.createElement('div');
             timeElement.className = `text-xs text-gray-500 mt-1 ${isUser ? 'text-right' : 'text-left'}`;
             timeElement.textContent = new Date(messageData.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-            // 6. Assemblage
             bubble.appendChild(senderNameElement);
             bubble.appendChild(textElement);
             bubble.appendChild(timeElement);
             messageWrapper.appendChild(bubble);
             chatContainer.appendChild(messageWrapper);
             
-            // Faire défiler vers le bas si l'utilisateur était déjà en bas
             if (isScrolledToBottom || isUser) {
                 chatContainer.scrollTop = chatContainer.scrollHeight;
             }
@@ -293,13 +332,9 @@
         
         // --- Fonctions WebSocket ---
 
-        /**
-         * Envoie un message JSON via WebSocket.
-         */
         function sendWebSocketMessage(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 try {
-                    // Ajoute l'ID de l'expéditeur pour que le serveur sache qui ignore
                     data.originatorId = currentUserId; 
                     ws.send(JSON.stringify(data));
                 } catch (error) {
@@ -310,9 +345,6 @@
             }
         }
 
-        /**
-         * Envoie un message de chat via WebSocket.
-         */
         function sendChatMessage(text) {
             if (text.trim() === "") return;
 
@@ -322,16 +354,14 @@
                 senderName: localPlayerData.name,
                 text: text.trim(),
                 color: localPlayerData.color,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                gameId: localPlayerData.gameId // Ajouter le gameId pour le filtrage futur
             };
             
             renderMessages(message);
             sendWebSocketMessage(message);
         }
 
-        /**
-         * Envoie le message de la Patrone PNJ (émulé).
-         */
         function sendPatroneMessage(text) {
              const message = {
                 type: 'pnj_chat',
@@ -343,12 +373,9 @@
             };
             
             renderMessages(message);
-            sendWebSocketMessage(message); // On l'envoie aussi aux autres pour synchroniser
+            sendWebSocketMessage(message); 
         }
         
-        /**
-         * Traite les messages reçus du serveur WebSocket.
-         */
         function handleIncomingMessage(message) {
             let data;
             try {
@@ -358,8 +385,6 @@
                 return;
             }
 
-            // Le serveur doit relayer les messages à tous SAUF à l'expéditeur. 
-            // Si le serveur est un simple relais, le client doit IGNORER ses propres messages.
             if (data.senderId === currentUserId && data.type !== 'pnj_init') { 
                 return; 
             }
@@ -369,27 +394,51 @@
                 case 'pnj_chat':
                     renderMessages(data);
                     break;
-                case 'join':
-                case 'player_update':
-                    // Mise à jour de la liste des joueurs
-                    allPlayers[data.player.id] = data.player;
-                    console.log("Joueur mis à jour:", data.player.name, "Total:", Object.keys(allPlayers).length);
+                case 'join': // Initial handshake
+                case 'player_update': // Player state update (name, color, score)
+                    // Gestion de la mise à jour des joueurs
+                    const newPlayer = data.player;
+                    const isNewPlayer = !allPlayers[newPlayer.id];
+
+                    allPlayers[newPlayer.id] = newPlayer;
+                    console.log(`Joueur mis à jour: ${newPlayer.name}. Total joueurs suivis: ${Object.keys(allPlayers).length}`);
                     
-                    // Si un joueur arrive et que nous sommes déjà identifiés, nous lui renvoyons nos infos
-                    if (localPlayerData.hasName && data.player.id !== currentUserId) {
-                        sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                    // Si on est dans le lobby (HOTE ou REJOINDRE)
+                    if (localPlayerData.isLobbyPhase) {
+                        // 1. L'hôte met à jour son statut de lobby
+                        if (localPlayerData.isHost) {
+                            updateHostLobbyStatus();
+                            // Envoi d'une notification à l'hôte si c'est un nouveau joueur identifié
+                            if (newPlayer.hasName && newPlayer.id !== currentUserId && newPlayer.gameId === localPlayerData.gameId) {
+                                renderSystemMessage(`${newPlayer.name} a rejoint le lobby.`, true);
+                            }
+                        }
+
+                        // 2. Si un joueur arrive et que nous sommes identifiés, nous lui renvoyons nos infos pour synchro
+                        if (localPlayerData.hasName && newPlayer.id !== currentUserId) {
+                            sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                        }
                     }
+
                     break;
+
+                case 'game_start':
+                    renderSystemMessage(`La partie ${data.gameId} est DÉMARRÉE par ${data.hostName} !`);
+                    // Ici irait la vraie logique de démarrage de jeu (masquer le chat, afficher la tâche, etc.)
+                    localPlayerData.isLobbyPhase = false;
+                    lobbyStatusHost.classList.add('hidden');
+                    // On peut aussi mettre le chat en mode lecture seule si besoin
+                    break;
+
                 case 'pnj_init':
-                     // Ceci simule l'état "chat vide"
                      if (!localPlayerData.hasName) {
                         sendPatroneMessage("Bienvenue dans l'entreprise. Je suis la Patrone. Veuillez vous identifier en tapant votre nom (10 caractères max) dans la conversation ci-dessous.");
                         sendPatroneMessage("Lien vers les règles du jeu : [À insérer ici]");
                         showInstruction("Entrez votre nom (max 10 caractères)");
                      }
                      break;
+
                 default:
-                    // Peut-être un message WebRTC (SDP/ICE)
                     console.log(`Message de type inconnu/WebRTC reçu: ${data.type}`);
             }
         }
@@ -398,34 +447,56 @@
         // --- Logique de Jeu / Flux ---
         
         function processUserInput(text) {
+            const command = text.trim().toUpperCase();
+
             if (!localPlayerData.hasName) {
                 handleNameInput(text);
-            } else {
-                sendChatMessage(text);
-                
-                const command = text.trim().toUpperCase();
-                if (command === 'HOTE') {
-                    localPlayerData.isHost = true;
-                    // Mise à jour de l'état partagé
-                    sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
-                    
-                    sendPatroneMessage("Vous êtes l'hôte. Veuillez partager votre ID de session pour que les autres joueurs puissent vous rejoindre.");
-                    showInstruction(`Votre ID de session: ${currentUserId}`);
-                } else if (command === 'REJOINDRE') {
-                    localPlayerData.isHost = false;
-                    // Mise à jour de l'état partagé
-                    sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                return;
+            } 
+            
+            if (command === 'HOTE') {
+                if (localPlayerData.isLobbyPhase) return; // Éviter de recréer si déjà en cours
 
-                    sendPatroneMessage("Veuillez entrer l'ID de session que votre hôte vous a fourni.");
-                    showInstruction("Entrez l'ID de session de l'hôte.");
-                } else if (localPlayerData.isHost === false && instructionMessage.textContent.includes("l'ID de session de l'hôte") && text.trim().length > 10) {
-                     // Logique d'entrée de l'ID de session (simplifié)
+                localPlayerData.isHost = true;
+                localPlayerData.gameId = generateGameCode(); // NOUVEAU: Code court
+                localPlayerData.isLobbyPhase = true;
+                
+                // Mise à jour de l'état partagé (très important de le faire après avoir set le gameId)
+                sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                
+                sendPatroneMessage("Vous êtes l'hôte. Veuillez partager ce code de session pour que les autres joueurs puissent vous rejoindre.");
+                showInstruction(`Votre CODE DE SESSION: ${localPlayerData.gameId}`);
+                
+                // Forcer la mise à jour UI Hôte
+                updateHostLobbyStatus();
+            } else if (command === 'REJOINDRE') {
+                if (localPlayerData.isLobbyPhase) return; // Éviter de recréer si déjà en cours
+
+                localPlayerData.isHost = false;
+                localPlayerData.isLobbyPhase = true;
+
+                // Mise à jour de l'état partagé
+                sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+
+                sendPatroneMessage("Veuillez entrer le code de session que votre hôte vous a fourni.");
+                showInstruction("Entrez le CODE DE SESSION à 4 chiffres.");
+            } else if (localPlayerData.isLobbyPhase && !localPlayerData.isHost && instructionMessage.textContent.includes("CODE DE SESSION")) {
+                 // Logique d'entrée de l'ID de session (vérification 4 chiffres)
+                 if (/^\d{4}$/.test(text.trim())) {
                      localPlayerData.gameId = text.trim();
                      hideInstruction();
-                     sendPatroneMessage(`Tentative de rejoindre la partie: ${localPlayerData.gameId}.`);
-                     // Ici irait l'initialisation de l'offre WebRTC
+                     
+                     // Mise à jour de l'état partagé avec le gameId
+                     sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+
+                     renderSystemMessage(`Tentative de rejoindre la partie: ${localPlayerData.gameId}.`);
                      showInstruction("Connexion au groupe établie. En attente de l'hôte...");
-                }
+                 } else {
+                    sendPatroneMessage("Ce code n'est pas valide. Veuillez entrer un code à 4 chiffres.");
+                 }
+            } else {
+                // Message de chat normal
+                sendChatMessage(text);
             }
         }
         
@@ -433,24 +504,19 @@
             const cleanName = name.trim();
             if (cleanName.length > 0 && cleanName.length <= 10) {
                 
-                // 1. Attribution de la couleur (basique, basée sur l'index de l'ID du joueur, pour simuler la couleur unique)
-                // Note: La couleur sera synchronisée par 'player_update'
                 const colorIndex = Array.from(cleanName).reduce((sum, char) => sum + char.charCodeAt(0), 0) % ALL_PLAYER_COLORS.length;
                 localPlayerData.color = ALL_PLAYER_COLORS[colorIndex];
                 
-                // 2. Mise à jour de l'état local
                 localPlayerData.name = cleanName;
                 localPlayerData.hasName = true;
 
-                // 3. Mise à jour de l'UI
                 updatePlayerAccent(localPlayerData.color);
                 hideInstruction();
                 
-                // 4. Envoi de l'état du joueur (très important pour partager le nom/couleur)
+                // Envoi de l'état du joueur (très important pour partager le nom/couleur)
                 sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                 sendChatMessage(`Bonjour, je suis ${cleanName} !`);
                 
-                // 5. Demander HÔTE/REJOINDRE
                 sendPatroneMessage("Parfait, votre nom est enregistré. Voulez-vous être HÔTE ou REJOINDRE une partie ?");
                 showInstruction("Tapez 'HOTE' ou 'REJOINDRE'.");
 
@@ -461,8 +527,24 @@
             }
         }
 
+        function startGame() {
+            if (!localPlayerData.isHost || !startGameButton.disabled) {
+                const message = {
+                    type: 'game_start',
+                    senderId: currentUserId,
+                    hostName: localPlayerData.name,
+                    gameId: localPlayerData.gameId,
+                    timestamp: Date.now()
+                };
+                
+                sendWebSocketMessage(message);
+                renderSystemMessage("VOUS AVEZ DÉMARRÉ LA PARTIE !");
+                // Le message sera reçu par tous, y compris l'hôte, et déclenchera la logique 'game_start'
+            }
+        }
+
+
         function startWorkPointsTicker() {
-            // Un seul intervalle de points de travail pour le client
             if (window.workTicker) return; 
 
             window.workTicker = setInterval(() => {
@@ -500,37 +582,37 @@
             ws.onopen = () => {
                 console.log('Connecté au serveur de signalisation.');
                 chatContainer.innerHTML = '<div class="text-center text-green-400 mt-4">Connexion établie. En attente d\'autres joueurs...</div>';
-                reconnectAttempts = 0; // Réinitialiser après succès
+                reconnectAttempts = 0; 
                 
                 // 1. Envoyer le statut de connexion (pour se faire connaître)
                 sendWebSocketMessage({ type: 'join', player: localPlayerData });
                 
-                // 2. Demander l'état du PNJ/jeu (pour voir si d'autres joueurs sont là)
-                // La Patrone répondra à cette requête si c'est la première fois ou si elle doit se manifester.
+                // 2. Demander l'état du PNJ/jeu 
                 sendWebSocketMessage({ type: 'pnj_init', senderId: currentUserId });
 
-                // Si le joueur est déjà identifié, on lui redemande sa prochaine action
+                // 3. Si le joueur est déjà identifié, on lui redemande sa prochaine action
                 if (localPlayerData.hasName) {
-                    hideInstruction(); // Cacher l'instruction si déjà identifié, puis le PNJ reprendra la main.
+                    // Si le joueur est hôte et a déjà un code, il le partage à nouveau
+                    if (localPlayerData.isHost && localPlayerData.gameId) {
+                        localPlayerData.isLobbyPhase = true;
+                        showInstruction(`Votre CODE DE SESSION: ${localPlayerData.gameId}. Tapez 'HOTE' pour le réafficher si besoin.`);
+                        updateHostLobbyStatus();
+                    } else if (!localPlayerData.isHost && localPlayerData.gameId) {
+                        localPlayerData.isLobbyPhase = true;
+                        showInstruction(`Connecté à la partie ${localPlayerData.gameId}. En attente de l'hôte...`);
+                    } else {
+                        // S'il est identifié mais n'a pas encore choisi HOTE/REJOINDRE
+                        sendPatroneMessage("Voulez-vous être HÔTE ou REJOINDRE une partie ?");
+                        showInstruction("Tapez 'HOTE' ou 'REJOINDRE'.");
+                    }
                 }
             };
 
             ws.onmessage = handleIncomingMessage;
-
-            ws.onerror = (error) => {
-                console.error("Erreur de connexion WebSocket:", error);
-                // Le onclose sera généralement appelé immédiatement après onerror.
-            };
-
-            ws.onclose = (event) => {
-                console.log(`Déconnecté du serveur de signalisation. Code: ${event.code}.`);
-                handleConnectionError();
-            };
+            ws.onerror = (error) => { console.error("Erreur de connexion WebSocket:", error); };
+            ws.onclose = (event) => { console.log(`Déconnecté du serveur de signalisation. Code: ${event.code}.`); handleConnectionError(); };
         }
         
-        /**
-         * Gère la reconnexion et les tentatives.
-         */
         function handleConnectionError() {
              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempts++;
@@ -547,7 +629,7 @@
             if (text.trim() !== "") {
                 processUserInput(text);
                 messageInput.value = ""; 
-                messageInput.focus();
+                // La sélection automatique est gérée par le `focus()` ci-dessous
             }
         }
 
@@ -559,17 +641,19 @@
         }
         
         window.onload = () => {
-            // Configuration initiale de l'état UI
-            updatePlayerAccent(localPlayerData.color); // Met à jour la couleur par défaut
+            updatePlayerAccent(localPlayerData.color); 
             
             // Événements
             sendButton.addEventListener('click', handleSendClick);
             messageInput.addEventListener('keydown', handleInputKeypress);
-            messageInput.focus(); // Focus automatique
+            startGameButton.addEventListener('click', startGame);
 
             // Démarrage du système
             initializeWebSocket();
-            startWorkPointsTicker(); // Le compteur de points commence à tourner
+            startWorkPointsTicker(); 
+            
+            // Assurer le focus sur l'entrée après le chargement
+            messageInput.focus();
         };
 
     </script>
