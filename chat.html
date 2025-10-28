@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Épuisement Professionnel - Chat WebSocket</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+        :root {
+            --bg-dark: #121212; /* Noir très foncé */
+            --bg-header: #1e1e1e; /* Gris foncé pour les barres */
+            --text-light: #E0E0E0; /* Gris très clair */
+            --bubble-user: #4CAF50; /* Vert foncé/claire pour l'utilisateur */
+            --bubble-other: #333333; /* Gris foncé pour les autres/PNJ */
+            --accent-player: #E0E0E0; /* Accent par défaut (sera la couleur du joueur) */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #chat-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        #chat-container::-webkit-scrollbar {
+            display: none;
+        }
+        .message-bubble {
+            max-width: 85%;
+            padding: 0.6rem 0.9rem;
+            border-radius: 1rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+        /* Message de l'utilisateur (à droite) */
+        .user-message {
+            background-color: var(--bubble-user);
+            align-self: flex-end;
+            color: #fff;
+            border-bottom-right-radius: 0.25rem;
+        }
+        /* Message des autres (à gauche) */
+        .other-message {
+            background-color: var(--bubble-other);
+            align-self: flex-start;
+            border-bottom-left-radius: 0.25rem;
+            border: 1px solid var(--accent-player);
+        }
+        .header-bar, .input-area {
+            background-color: var(--bg-header);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        #work-points {
+            background-color: var(--accent-player);
+            color: var(--bg-dark);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Barre de Progression et Score -->
+    <header class="header-bar p-3 border-b border-gray-700">
+        <!-- Ligne 1: Barre de progression (Objectif de manche) -->
+        <div class="h-2 w-full bg-gray-500 rounded-full mb-2 overflow-hidden">
+            <div id="progress-bar-fill" class="h-full bg-yellow-400 transition-all duration-500" style="width: 0%;"></div>
+        </div>
+        <!-- Ligne 2: Compteurs -->
+        <div class="flex justify-between items-center text-sm">
+            <div id="countdown" class="text-gray-400">Temps restant: --:--</div>
+            <div id="work-points" class="font-extrabold p-1 rounded-lg transition-all duration-300">
+                Travail: <span id="work-points-value" class="font-mono">0</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Conteneur de la Conversation -->
+    <div id="chat-container">
+        <!-- Les messages seront ajoutés ici par JavaScript -->
+        <div class="text-center text-gray-500 mt-4">Connexion au serveur de signalisation...</div>
+    </div>
+
+    <!-- Message d'instruction (au-dessus de la zone de saisie) -->
+    <div id="instruction-message" class="p-2 text-center text-sm font-semibold text-yellow-400 bg-gray-800 hidden">
+        <!-- Ceci affichera l'instruction pour l'utilisateur (ex: "Entrer votre nom") -->
+    </div>
+
+    <!-- Zone de Saisie de Message -->
+    <div class="input-area p-3 flex gap-2 border-t border-gray-700">
+        <input type="text" id="message-input" placeholder="Écrivez votre message..."
+               class="flex-grow p-3 rounded-xl bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-400 transition shadow-lg">
+        <button id="send-button"
+                class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-semibold py-3 px-6 rounded-xl transition duration-150 shadow-md">
+            Envoyer
+        </button>
+    </div>
+
+    <!-- POPUP MODAL (pour l'investissement de points) -->
+    <!-- Le modal est conservé mais caché pour l'instant -->
+    <div id="investment-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 p-6 rounded-xl shadow-2xl w-full max-w-sm border border-yellow-500">
+            <h3 class="text-xl font-bold mb-4 text-center text-yellow-400">Investissement de Travail</h3>
+            <p class="text-sm text-gray-300 mb-4" id="modal-description">Combien de points souhaitez-vous investir dans cette tâche ? (Max: 100)</p>
+            <input type="number" id="investment-input" min="1" max="100" value="50"
+                   class="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 mb-4">
+            <div class="flex justify-end gap-3">
+                <button id="modal-invest-button" class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-semibold py-2 px-4 rounded-lg transition">
+                    Investir
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // --- CONSTANTES ET CONFIGURATION GLOBALE ---
+        // L'URL de votre serveur Render pour le signaling WebRTC
+        const SIGNALING_SERVER_URL = 'wss://webrtc-epuisement-professionnel.onrender.com';
+        
+        const PNJ_ID = 'patrone';
+        const PNJ_NAME = 'Patrone';
+        const ACCENT_COLOR_DEFAULT = '#E0E0E0';
+        const WORK_POINTS_PER_TICK = 10; // 10 points par 10 secondes (pour info)
+        const WORK_TICK_INTERVAL_MS = 10000;
+
+        // Couleurs pâles demandées (Hex Codes)
+        const ALL_PLAYER_COLORS = [
+            "#FFC7C7", // Rouge pâle
+            "#FFD580", // Orange pâle
+            "#A0C4FF", // Bleu pâle
+            "#C3A0FF", // Mauve pâle
+            "#A0FFC4", // Vert pâle
+            "#FFC7D8", // Rose pâle
+            "#A0FFFF", // Turquoise
+            "#FFFFB2"  // Jaune
+        ];
+
+        // --- Variables d'État du Jeu ---
+        let ws = null;
+        let currentUserId = crypto.randomUUID(); // Génère un ID unique pour cette session
+        let localPlayerData = {
+            id: currentUserId,
+            name: `Joueur${currentUserId.substring(0, 4)}`,
+            color: ACCENT_COLOR_DEFAULT,
+            workPoints: 0,
+            hasName: false,
+            // Pour l'hôte/rejoindre
+            isHost: false,
+            gameId: null // Id de la partie
+        };
+        // État de tous les joueurs (mis à jour par WebSocket)
+        let allPlayers = {};
+        allPlayers[PNJ_ID] = { id: PNJ_ID, name: PNJ_NAME, color: ACCENT_COLOR_DEFAULT };
+
+
+        // --- Références DOM ---
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const instructionMessage = document.getElementById('instruction-message');
+        const workPointsDisplay = document.getElementById('work-points-value');
+        const workPointsContainer = document.getElementById('work-points');
+        const rootStyle = document.documentElement.style;
+
+
+        // --- Fonctions Utilitaires ---
+
+        /**
+         * Met à jour la couleur d'accent du joueur dans l'interface.
+         */
+        function updatePlayerAccent(color) {
+            rootStyle.setProperty('--accent-player', color);
+            workPointsContainer.style.backgroundColor = color;
+            workPointsContainer.style.color = '#121212';
+        }
+
+        /**
+         * Met à jour l'affichage des points de travail.
+         */
+        function updateWorkPointsDisplay(points) {
+            localPlayerData.workPoints = points;
+            workPointsDisplay.textContent = points;
+        }
+
+        /**
+         * Affiche un message d'instruction au-dessus de la zone de saisie.
+         */
+        function showInstruction(text) {
+            instructionMessage.textContent = text;
+            instructionMessage.classList.remove('hidden');
+        }
+
+        /**
+         * Cache le message d'instruction.
+         */
+        function hideInstruction() {
+            instructionMessage.classList.add('hidden');
+        }
+
+        /**
+         * Ajoute un message à l'interface utilisateur.
+         */
+        function renderMessages(messageData) {
+            const isScrolledToBottom = chatContainer.scrollHeight - chatContainer.clientHeight <= chatContainer.scrollTop + 1;
+            
+            // 1. Conteneur du message (flexbox)
+            const isUser = messageData.senderId === currentUserId;
+            
+            // Info joueur (PNJ ou autre joueur)
+            const senderData = allPlayers[messageData.senderId] || { 
+                name: messageData.senderName, 
+                color: messageData.color || ACCENT_COLOR_DEFAULT
+            };
+
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+
+            // 2. Bulle de message
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble max-w-xs sm:max-w-md ${isUser ? 'user-message' : 'other-message'}`;
+            
+            // Appliquer la bordure/accent pour les autres joueurs et la Patrone
+            if (!isUser) {
+                 bubble.style.borderColor = senderData.color;
+            }
+
+            // 3. Nom de l'expéditeur
+            const senderNameElement = document.createElement('div');
+            senderNameElement.className = `text-xs font-bold mb-0.5 ${isUser ? 'text-right' : 'text-left'}`;
+            senderNameElement.style.color = senderData.color;
+            senderNameElement.textContent = senderData.name;
+
+            // 4. Texte du message
+            const textElement = document.createElement('p');
+            textElement.className = 'text-sm break-words';
+            
+            // Remplacer les noms des joueurs dans le texte par leur couleur (simulé)
+            let formattedText = messageData.text;
+            Object.values(allPlayers).forEach(player => {
+                if (player.name && player.name !== PNJ_NAME) {
+                    const regex = new RegExp(`\\b${player.name}\\b`, 'gi');
+                    formattedText = formattedText.replace(regex, `<span style="color:${player.color}; font-weight: 800;">${player.name}</span>`);
+                }
+            });
+            textElement.innerHTML = formattedText;
+
+            // 5. Temps du message
+            const timeElement = document.createElement('div');
+            timeElement.className = `text-xs text-gray-500 mt-1 ${isUser ? 'text-right' : 'text-left'}`;
+            timeElement.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+            // 6. Assemblage
+            bubble.appendChild(senderNameElement);
+            bubble.appendChild(textElement);
+            bubble.appendChild(timeElement);
+            messageWrapper.appendChild(bubble);
+            chatContainer.appendChild(messageWrapper);
+            
+            // Faire défiler vers le bas si l'utilisateur était déjà en bas
+            if (isScrolledToBottom || isUser) {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+        
+        // --- Fonctions WebSocket ---
+
+        /**
+         * Envoie un message JSON via WebSocket.
+         */
+        function sendWebSocketMessage(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                try {
+                    ws.send(JSON.stringify(data));
+                } catch (error) {
+                    console.error("Erreur lors de l'envoi du message WebSocket:", error);
+                }
+            } else {
+                console.warn("WebSocket non connecté. Impossible d'envoyer le message.");
+            }
+        }
+
+        /**
+         * Envoie un message de chat via WebSocket.
+         */
+        function sendChatMessage(text) {
+            if (text.trim() === "") return;
+
+            const message = {
+                type: 'chat',
+                senderId: localPlayerData.id,
+                senderName: localPlayerData.name,
+                text: text.trim(),
+                color: localPlayerData.color,
+                timestamp: Date.now()
+            };
+            
+            // Rendre le message immédiatement pour l'utilisateur local
+            renderMessages(message);
+            
+            // L'envoyer à tous les autres clients via le serveur de relais
+            sendWebSocketMessage(message);
+        }
+
+        /**
+         * Envoie le message de la Patrone PNJ (émulé).
+         */
+        function sendPatroneMessage(text) {
+             const message = {
+                type: 'pnj_chat',
+                senderId: PNJ_ID,
+                senderName: PNJ_NAME,
+                text: text,
+                color: ACCENT_COLOR_DEFAULT,
+                timestamp: Date.now()
+            };
+            
+            // Rendre le message immédiatement
+            renderMessages(message);
+            
+            // L'envoyer aux autres (optionnel, peut être retiré si la Patrone n'est que local)
+            sendWebSocketMessage(message);
+        }
+        
+        /**
+         * Traite les messages reçus du serveur WebSocket.
+         */
+        function handleIncomingMessage(message) {
+            let data;
+            try {
+                data = JSON.parse(message.data);
+            } catch (e) {
+                console.error("Erreur de parsage du message JSON:", e, message.data);
+                return;
+            }
+
+            // Ne pas traiter ses propres messages s'ils sont simplement des relais
+            if (data.senderId === currentUserId && data.type !== 'pnj_init') { 
+                return; 
+            }
+            
+            switch (data.type) {
+                case 'chat':
+                case 'pnj_chat':
+                    renderMessages(data);
+                    break;
+                case 'join':
+                case 'player_update':
+                    // Mise à jour de la liste des joueurs
+                    allPlayers[data.player.id] = data.player;
+                    console.log("Joueur mis à jour:", data.player.name, "Total:", Object.keys(allPlayers).length);
+                    // Si un nouveau joueur arrive après l'identification locale, on lui répond avec son propre statut
+                    if (localPlayerData.hasName && data.player.id !== currentUserId) {
+                        sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                    }
+                    break;
+                case 'pnj_init':
+                     // Ceci simule l'état "chat vide"
+                     if (!localPlayerData.hasName) {
+                        sendPatroneMessage("Bienvenue dans l'entreprise. Je suis la Patrone. Veuillez vous identifier en tapant votre nom (10 caractères max) dans la conversation ci-dessous.");
+                        sendPatroneMessage("Lien vers les règles du jeu : [À insérer ici]");
+                        showInstruction("Entrez votre nom (max 10 caractères)");
+                     }
+                     break;
+                // Vous ajouterez ici les types 'offer', 'answer', 'ice', 'game_state', etc.
+                default:
+                    console.log("Message de type inconnu reçu:", data.type);
+            }
+        }
+
+
+        // --- Logique de Jeu / Flux ---
+        
+        /**
+         * Gère la saisie de l'utilisateur en fonction de l'état du jeu.
+         */
+        function processUserInput(text) {
+            if (!localPlayerData.hasName) {
+                handleNameInput(text);
+            } else {
+                sendChatMessage(text);
+                // Ajoutez ici la logique de jeu (ex: si le texte est "HOTE", démarrez la partie)
+                const command = text.trim().toUpperCase();
+                if (command === 'HOTE' || command === 'REJOINDRE') {
+                     // Logique du jeu P2P/WebRTC à insérer ici
+                    if (command === 'HOTE') {
+                        localPlayerData.isHost = true;
+                        sendPatroneMessage("Vous êtes l'hôte. Veuillez partager votre ID de session pour que les autres joueurs puissent vous rejoindre.");
+                        showInstruction(`Votre ID de session: ${currentUserId}`);
+                    } else {
+                        sendPatroneMessage("Veuillez entrer l'ID de session que votre hôte vous a fourni.");
+                        showInstruction("Entrez l'ID de session de l'hôte.");
+                    }
+                }
+            }
+        }
+        
+        /**
+         * Gère l'entrée du nom du joueur.
+         */
+        function handleNameInput(name) {
+            const cleanName = name.trim();
+            if (cleanName.length > 0 && cleanName.length <= 10) {
+                
+                // 1. Attribution de la couleur (Très basique sans Firestore, prend la première couleur disponible)
+                localPlayerData.color = ALL_PLAYER_COLORS[Object.keys(allPlayers).length % ALL_PLAYER_COLORS.length];
+                
+                // 2. Mise à jour de l'état local
+                localPlayerData.name = cleanName;
+                localPlayerData.hasName = true;
+                localPlayerData.id = currentUserId; // Assurer que l'ID est bien set
+
+                // 3. Mise à jour de l'UI
+                updatePlayerAccent(localPlayerData.color);
+                hideInstruction();
+
+                // 4. Envoi de l'état du joueur et du message de bienvenue
+                sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                sendChatMessage(`Bonjour, je suis ${cleanName} !`);
+                
+                // 5. Demander HÔTE/REJOINDRE
+                sendPatroneMessage("Parfait, votre nom est enregistré. Voulez-vous être HÔTE ou REJOINDRE une partie ?");
+                showInstruction("Tapez 'HOTE' ou 'REJOINDRE'.");
+
+            } else {
+                // Saisie invalide (longueur)
+                messageInput.classList.add('border-2', 'border-red-500');
+                messageInput.value = "";
+                setTimeout(() => messageInput.classList.remove('border-2', 'border-red-500'), 1000);
+            }
+        }
+
+        /**
+         * Gère l'accumulation automatique des points de travail.
+         */
+        function startWorkPointsTicker() {
+            setInterval(() => {
+                // On n'accumule des points que si le joueur a un nom
+                if (localPlayerData.hasName) {
+                    localPlayerData.workPoints += WORK_POINTS_PER_TICK;
+                    updateWorkPointsDisplay(localPlayerData.workPoints);
+                    // Pour un jeu réel, il faudrait envoyer une mise à jour de l'état du joueur ici
+                    // sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                }
+            }, WORK_TICK_INTERVAL_MS);
+            console.log(`Le générateur de points de travail est actif: ${WORK_POINTS_PER_TICK} points toutes les ${WORK_TICK_INTERVAL_MS / 1000} secondes.`);
+        }
+
+
+        // --- Démarrage et Événements ---
+
+        /**
+         * Initialise la connexion WebSocket.
+         */
+        function initializeWebSocket() {
+            chatContainer.innerHTML = '<div class="text-center text-gray-500 mt-4">Tentative de connexion au serveur...</div>';
+            
+            ws = new WebSocket(SIGNALING_SERVER_URL);
+            
+            ws.onopen = () => {
+                console.log('Connecté au serveur de signalisation.');
+                chatContainer.innerHTML = '<div class="text-center text-green-400 mt-4">Connexion établie. En attente d\'autres joueurs...</div>';
+                
+                // 1. Envoyer le statut de connexion initiale (pour que les autres nous voient)
+                sendWebSocketMessage({ type: 'join', player: localPlayerData });
+                
+                // 2. Déclencher le message PNJ si on est le seul (ou le premier)
+                sendWebSocketMessage({ type: 'pnj_init', senderId: currentUserId });
+            };
+
+            ws.onmessage = handleIncomingMessage;
+
+            ws.onerror = (error) => {
+                console.error("Erreur de connexion WebSocket:", error);
+                chatContainer.innerHTML = `<div class="text-center text-red-400 mt-4">Erreur: Impossible de connecter au serveur. Votre serveur doit être démarré.</div>`;
+            };
+
+            ws.onclose = () => {
+                console.log("Déconnecté du serveur de signalisation.");
+                chatContainer.innerHTML = '<div class="text-center text-red-400 mt-4">Déconnecté. Tentative de reconnexion dans 5 secondes...</div>';
+                setTimeout(initializeWebSocket, 5000); // Tente de se reconnecter
+            };
+        }
+
+        /**
+         * Gère l'envoi du message lorsque le bouton est cliqué.
+         */
+        function handleSendClick() {
+            const text = messageInput.value;
+            if (text.trim() !== "") {
+                processUserInput(text);
+                messageInput.value = ""; 
+                messageInput.focus();
+            }
+        }
+
+        /**
+         * Gère l'appui sur la touche Entrée.
+         */
+        function handleInputKeypress(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleSendClick();
+            }
+        }
+        
+        window.onload = () => {
+            // Événements
+            sendButton.addEventListener('click', handleSendClick);
+            messageInput.addEventListener('keydown', handleInputKeypress);
+            messageInput.focus(); // Focus automatique
+
+            // Démarrage du système
+            initializeWebSocket();
+            startWorkPointsTicker(); // Le compteur de points commence à tourner
+        };
+
+    </script>
+</body>
+</html>
