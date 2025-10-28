@@ -59,6 +59,13 @@
             border-bottom-left-radius: 0.25rem;
             border: 1px solid var(--accent-player);
         }
+        /* Style pour la Patrone (PNJ) */
+        .pnj-message {
+            background-color: #2a2a2a; /* Encore plus foncé */
+            align-self: flex-start;
+            border-bottom-left-radius: 0.25rem;
+            border: 1px solid var(--accent-player);
+        }
         .header-bar, .input-area {
             background-color: var(--bg-header);
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
@@ -108,7 +115,6 @@
     </div>
 
     <!-- POPUP MODAL (pour l'investissement de points) -->
-    <!-- Le modal est conservé mais caché pour l'instant -->
     <div id="investment-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-800 p-6 rounded-xl shadow-2xl w-full max-w-sm border border-yellow-500">
             <h3 class="text-xl font-bold mb-4 text-center text-yellow-400">Investissement de Travail</h3>
@@ -131,7 +137,7 @@
         const PNJ_ID = 'patrone';
         const PNJ_NAME = 'Patrone';
         const ACCENT_COLOR_DEFAULT = '#E0E0E0';
-        const WORK_POINTS_PER_TICK = 10; // 10 points par 10 secondes (pour info)
+        const WORK_POINTS_PER_TICK = 10;
         const WORK_TICK_INTERVAL_MS = 10000;
 
         // Couleurs pâles demandées (Hex Codes)
@@ -148,16 +154,18 @@
 
         // --- Variables d'État du Jeu ---
         let ws = null;
-        let currentUserId = crypto.randomUUID(); // Génère un ID unique pour cette session
+        // Tente de récupérer l'ID de session stocké, sinon en génère un nouveau
+        let currentUserId = localStorage.getItem('userId') || crypto.randomUUID(); 
+        localStorage.setItem('userId', currentUserId); // Stocke pour la persistance
+        
         let localPlayerData = {
             id: currentUserId,
             name: `Joueur${currentUserId.substring(0, 4)}`,
             color: ACCENT_COLOR_DEFAULT,
             workPoints: 0,
             hasName: false,
-            // Pour l'hôte/rejoindre
             isHost: false,
-            gameId: null // Id de la partie
+            gameId: null 
         };
         // État de tous les joueurs (mis à jour par WebSocket)
         let allPlayers = {};
@@ -216,6 +224,7 @@
             
             // 1. Conteneur du message (flexbox)
             const isUser = messageData.senderId === currentUserId;
+            const isPNJ = messageData.senderId === PNJ_ID;
             
             // Info joueur (PNJ ou autre joueur)
             const senderData = allPlayers[messageData.senderId] || { 
@@ -228,7 +237,16 @@
 
             // 2. Bulle de message
             const bubble = document.createElement('div');
-            bubble.className = `message-bubble max-w-xs sm:max-w-md ${isUser ? 'user-message' : 'other-message'}`;
+            let bubbleClasses = 'message-bubble max-w-xs sm:max-w-md';
+
+            if (isUser) {
+                bubbleClasses += ' user-message';
+            } else if (isPNJ) {
+                bubbleClasses += ' pnj-message';
+            } else {
+                bubbleClasses += ' other-message';
+            }
+            bubble.className = bubbleClasses;
             
             // Appliquer la bordure/accent pour les autres joueurs et la Patrone
             if (!isUser) {
@@ -258,7 +276,7 @@
             // 5. Temps du message
             const timeElement = document.createElement('div');
             timeElement.className = `text-xs text-gray-500 mt-1 ${isUser ? 'text-right' : 'text-left'}`;
-            timeElement.textContent = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            timeElement.textContent = new Date(messageData.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
             // 6. Assemblage
             bubble.appendChild(senderNameElement);
@@ -281,6 +299,8 @@
         function sendWebSocketMessage(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 try {
+                    // Ajoute l'ID de l'expéditeur pour que le serveur sache qui ignore
+                    data.originatorId = currentUserId; 
                     ws.send(JSON.stringify(data));
                 } catch (error) {
                     console.error("Erreur lors de l'envoi du message WebSocket:", error);
@@ -305,10 +325,7 @@
                 timestamp: Date.now()
             };
             
-            // Rendre le message immédiatement pour l'utilisateur local
             renderMessages(message);
-            
-            // L'envoyer à tous les autres clients via le serveur de relais
             sendWebSocketMessage(message);
         }
 
@@ -325,11 +342,8 @@
                 timestamp: Date.now()
             };
             
-            // Rendre le message immédiatement
             renderMessages(message);
-            
-            // L'envoyer aux autres (optionnel, peut être retiré si la Patrone n'est que local)
-            sendWebSocketMessage(message);
+            sendWebSocketMessage(message); // On l'envoie aussi aux autres pour synchroniser
         }
         
         /**
@@ -344,7 +358,8 @@
                 return;
             }
 
-            // Ne pas traiter ses propres messages s'ils sont simplement des relais
+            // Le serveur doit relayer les messages à tous SAUF à l'expéditeur. 
+            // Si le serveur est un simple relais, le client doit IGNORER ses propres messages.
             if (data.senderId === currentUserId && data.type !== 'pnj_init') { 
                 return; 
             }
@@ -359,7 +374,8 @@
                     // Mise à jour de la liste des joueurs
                     allPlayers[data.player.id] = data.player;
                     console.log("Joueur mis à jour:", data.player.name, "Total:", Object.keys(allPlayers).length);
-                    // Si un nouveau joueur arrive après l'identification locale, on lui répond avec son propre statut
+                    
+                    // Si un joueur arrive et que nous sommes déjà identifiés, nous lui renvoyons nos infos
                     if (localPlayerData.hasName && data.player.id !== currentUserId) {
                         sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                     }
@@ -372,59 +388,65 @@
                         showInstruction("Entrez votre nom (max 10 caractères)");
                      }
                      break;
-                // Vous ajouterez ici les types 'offer', 'answer', 'ice', 'game_state', etc.
                 default:
-                    console.log("Message de type inconnu reçu:", data.type);
+                    // Peut-être un message WebRTC (SDP/ICE)
+                    console.log(`Message de type inconnu/WebRTC reçu: ${data.type}`);
             }
         }
 
 
         // --- Logique de Jeu / Flux ---
         
-        /**
-         * Gère la saisie de l'utilisateur en fonction de l'état du jeu.
-         */
         function processUserInput(text) {
             if (!localPlayerData.hasName) {
                 handleNameInput(text);
             } else {
                 sendChatMessage(text);
-                // Ajoutez ici la logique de jeu (ex: si le texte est "HOTE", démarrez la partie)
+                
                 const command = text.trim().toUpperCase();
-                if (command === 'HOTE' || command === 'REJOINDRE') {
-                     // Logique du jeu P2P/WebRTC à insérer ici
-                    if (command === 'HOTE') {
-                        localPlayerData.isHost = true;
-                        sendPatroneMessage("Vous êtes l'hôte. Veuillez partager votre ID de session pour que les autres joueurs puissent vous rejoindre.");
-                        showInstruction(`Votre ID de session: ${currentUserId}`);
-                    } else {
-                        sendPatroneMessage("Veuillez entrer l'ID de session que votre hôte vous a fourni.");
-                        showInstruction("Entrez l'ID de session de l'hôte.");
-                    }
+                if (command === 'HOTE') {
+                    localPlayerData.isHost = true;
+                    // Mise à jour de l'état partagé
+                    sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+                    
+                    sendPatroneMessage("Vous êtes l'hôte. Veuillez partager votre ID de session pour que les autres joueurs puissent vous rejoindre.");
+                    showInstruction(`Votre ID de session: ${currentUserId}`);
+                } else if (command === 'REJOINDRE') {
+                    localPlayerData.isHost = false;
+                    // Mise à jour de l'état partagé
+                    sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
+
+                    sendPatroneMessage("Veuillez entrer l'ID de session que votre hôte vous a fourni.");
+                    showInstruction("Entrez l'ID de session de l'hôte.");
+                } else if (localPlayerData.isHost === false && instructionMessage.textContent.includes("l'ID de session de l'hôte") && text.trim().length > 10) {
+                     // Logique d'entrée de l'ID de session (simplifié)
+                     localPlayerData.gameId = text.trim();
+                     hideInstruction();
+                     sendPatroneMessage(`Tentative de rejoindre la partie: ${localPlayerData.gameId}.`);
+                     // Ici irait l'initialisation de l'offre WebRTC
+                     showInstruction("Connexion au groupe établie. En attente de l'hôte...");
                 }
             }
         }
         
-        /**
-         * Gère l'entrée du nom du joueur.
-         */
         function handleNameInput(name) {
             const cleanName = name.trim();
             if (cleanName.length > 0 && cleanName.length <= 10) {
                 
-                // 1. Attribution de la couleur (Très basique sans Firestore, prend la première couleur disponible)
-                localPlayerData.color = ALL_PLAYER_COLORS[Object.keys(allPlayers).length % ALL_PLAYER_COLORS.length];
+                // 1. Attribution de la couleur (basique, basée sur l'index de l'ID du joueur, pour simuler la couleur unique)
+                // Note: La couleur sera synchronisée par 'player_update'
+                const colorIndex = Array.from(cleanName).reduce((sum, char) => sum + char.charCodeAt(0), 0) % ALL_PLAYER_COLORS.length;
+                localPlayerData.color = ALL_PLAYER_COLORS[colorIndex];
                 
                 // 2. Mise à jour de l'état local
                 localPlayerData.name = cleanName;
                 localPlayerData.hasName = true;
-                localPlayerData.id = currentUserId; // Assurer que l'ID est bien set
 
                 // 3. Mise à jour de l'UI
                 updatePlayerAccent(localPlayerData.color);
                 hideInstruction();
-
-                // 4. Envoi de l'état du joueur et du message de bienvenue
+                
+                // 4. Envoi de l'état du joueur (très important pour partager le nom/couleur)
                 sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                 sendChatMessage(`Bonjour, je suis ${cleanName} !`);
                 
@@ -433,24 +455,20 @@
                 showInstruction("Tapez 'HOTE' ou 'REJOINDRE'.");
 
             } else {
-                // Saisie invalide (longueur)
                 messageInput.classList.add('border-2', 'border-red-500');
                 messageInput.value = "";
                 setTimeout(() => messageInput.classList.remove('border-2', 'border-red-500'), 1000);
             }
         }
 
-        /**
-         * Gère l'accumulation automatique des points de travail.
-         */
         function startWorkPointsTicker() {
-            setInterval(() => {
-                // On n'accumule des points que si le joueur a un nom
+            // Un seul intervalle de points de travail pour le client
+            if (window.workTicker) return; 
+
+            window.workTicker = setInterval(() => {
                 if (localPlayerData.hasName) {
                     localPlayerData.workPoints += WORK_POINTS_PER_TICK;
                     updateWorkPointsDisplay(localPlayerData.workPoints);
-                    // Pour un jeu réel, il faudrait envoyer une mise à jour de l'état du joueur ici
-                    // sendWebSocketMessage({ type: 'player_update', player: localPlayerData });
                 }
             }, WORK_TICK_INTERVAL_MS);
             console.log(`Le générateur de points de travail est actif: ${WORK_POINTS_PER_TICK} points toutes les ${WORK_TICK_INTERVAL_MS / 1000} secondes.`);
@@ -459,42 +477,71 @@
 
         // --- Démarrage et Événements ---
 
-        /**
-         * Initialise la connexion WebSocket.
-         */
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+        const RECONNECT_DELAY_MS = 5000;
+
         function initializeWebSocket() {
-            chatContainer.innerHTML = '<div class="text-center text-gray-500 mt-4">Tentative de connexion au serveur...</div>';
+            if (ws) {
+                 ws.close(1000, "Tentative de reconnexion");
+                 ws = null;
+            }
+
+            chatContainer.innerHTML = `<div class="text-center text-gray-500 mt-4">Tentative de connexion au serveur (${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...</div>`;
             
-            ws = new WebSocket(SIGNALING_SERVER_URL);
+            try {
+                ws = new WebSocket(SIGNALING_SERVER_URL);
+            } catch (error) {
+                console.error("Erreur de création WebSocket:", error);
+                handleConnectionError();
+                return;
+            }
             
             ws.onopen = () => {
                 console.log('Connecté au serveur de signalisation.');
                 chatContainer.innerHTML = '<div class="text-center text-green-400 mt-4">Connexion établie. En attente d\'autres joueurs...</div>';
+                reconnectAttempts = 0; // Réinitialiser après succès
                 
-                // 1. Envoyer le statut de connexion initiale (pour que les autres nous voient)
+                // 1. Envoyer le statut de connexion (pour se faire connaître)
                 sendWebSocketMessage({ type: 'join', player: localPlayerData });
                 
-                // 2. Déclencher le message PNJ si on est le seul (ou le premier)
+                // 2. Demander l'état du PNJ/jeu (pour voir si d'autres joueurs sont là)
+                // La Patrone répondra à cette requête si c'est la première fois ou si elle doit se manifester.
                 sendWebSocketMessage({ type: 'pnj_init', senderId: currentUserId });
+
+                // Si le joueur est déjà identifié, on lui redemande sa prochaine action
+                if (localPlayerData.hasName) {
+                    hideInstruction(); // Cacher l'instruction si déjà identifié, puis le PNJ reprendra la main.
+                }
             };
 
             ws.onmessage = handleIncomingMessage;
 
             ws.onerror = (error) => {
                 console.error("Erreur de connexion WebSocket:", error);
-                chatContainer.innerHTML = `<div class="text-center text-red-400 mt-4">Erreur: Impossible de connecter au serveur. Votre serveur doit être démarré.</div>`;
+                // Le onclose sera généralement appelé immédiatement après onerror.
             };
 
-            ws.onclose = () => {
-                console.log("Déconnecté du serveur de signalisation.");
-                chatContainer.innerHTML = '<div class="text-center text-red-400 mt-4">Déconnecté. Tentative de reconnexion dans 5 secondes...</div>';
-                setTimeout(initializeWebSocket, 5000); // Tente de se reconnecter
+            ws.onclose = (event) => {
+                console.log(`Déconnecté du serveur de signalisation. Code: ${event.code}.`);
+                handleConnectionError();
             };
         }
-
+        
         /**
-         * Gère l'envoi du message lorsque le bouton est cliqué.
+         * Gère la reconnexion et les tentatives.
          */
+        function handleConnectionError() {
+             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                chatContainer.innerHTML = `<div class="text-center text-red-400 mt-4">Déconnecté. Tentative de reconnexion dans ${RECONNECT_DELAY_MS / 1000}s...</div>`;
+                setTimeout(initializeWebSocket, RECONNECT_DELAY_MS);
+            } else {
+                chatContainer.innerHTML = '<div class="text-center text-red-600 mt-4">Échec de la reconnexion après plusieurs tentatives. Veuillez vérifier le serveur.</div>';
+            }
+        }
+
+
         function handleSendClick() {
             const text = messageInput.value;
             if (text.trim() !== "") {
@@ -504,9 +551,6 @@
             }
         }
 
-        /**
-         * Gère l'appui sur la touche Entrée.
-         */
         function handleInputKeypress(event) {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -515,6 +559,9 @@
         }
         
         window.onload = () => {
+            // Configuration initiale de l'état UI
+            updatePlayerAccent(localPlayerData.color); // Met à jour la couleur par défaut
+            
             // Événements
             sendButton.addEventListener('click', handleSendClick);
             messageInput.addEventListener('keydown', handleInputKeypress);
