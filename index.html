@@ -177,7 +177,23 @@
         const $sendButton = document.getElementById('send-button');
 
         // --- CONSTANTES ET ÉTATS LOCAUX ---
-        const SERVER_URL = `ws://${window.location.host}`; // Utiliser le même hôte
+        
+        // CORRECTION DE L'ERREUR SYNTAXIQUE (ws:// est une chaîne invalide si l'hôte est vide)
+        let wsHost = window.location.host;
+        
+        // Si window.location.host est vide (ce qui se produit souvent dans les environnements sandboxes sécurisés), 
+        // nous devons reconstruire l'URL en utilisant le port connu du serveur (8080).
+        if (!wsHost || wsHost.trim() === '') {
+            // Utiliser le nom d'hôte actuel ou 'localhost' en dernier recours.
+            let hostName = window.location.hostname || 'localhost';
+            
+            // Reconstruire l'hôte en incluant le port 8080, où le serveur Node.js est censé écouter.
+            wsHost = `${hostName}:8080`;
+        }
+
+        // Utiliser le protocole ws:// (même si le client est en https, car le serveur Node.js écoute en ws).
+        const SERVER_URL = `ws://${wsHost}`;
+
         const MIN_PLAYERS = 2; // Doit correspondre à la constante serveur
         const POINTS_PER_INTERVAL = 1;
         const TIME_BETWEEN_POINTS_MS = 1000; // 1 point par seconde
@@ -226,12 +242,17 @@
             $connectText.textContent = "Connexion...";
             $connectButton.disabled = true;
 
+            console.log(`Tentative de connexion au serveur via: ${SERVER_URL}`);
+            
             ws = new WebSocket(SERVER_URL);
 
             ws.onopen = () => {
                 console.log("Connecté au serveur de jeu.");
                 gameState = GAME_STATES.WAITING_FOR_CLIENT_ID;
                 checkModalReadiness();
+                
+                // Si la connexion réussit, on doit demander au serveur notre ID.
+                sendToServer({ type: 'get_client_id' }); 
             };
 
             ws.onmessage = (event) => {
@@ -247,7 +268,14 @@
 
             ws.onerror = (err) => {
                 console.error("Erreur WebSocket:", err);
-                showAlert("Erreur de connexion au serveur.", 'error');
+                // Le message d'erreur est conservé pour le debug
+                showAlert(`Erreur de connexion au serveur. Assurez-vous que le serveur tourne sur ${SERVER_URL}`, 'error');
+                
+                // Mettre le bouton dans un état permettant la nouvelle tentative (s'il n'y a pas d'ID)
+                if (clientId === null) {
+                    $connectText.textContent = "Échec de connexion";
+                    $connectButton.disabled = true;
+                }
             };
         }
 
@@ -278,6 +306,7 @@
 
                 case 'game_state_sync':
                     // Mise à jour de l'état global du jeu
+                    const oldState = gameState;
                     gameState = data.state;
                     
                     // Mise à jour de la liste des joueurs
@@ -289,6 +318,11 @@
                         }
                     });
 
+                    // Si on passe de LOBBY à IN_GAME, on démarre l'accumulation de points
+                    if (oldState === GAME_STATES.LOBBY && gameState === GAME_STATES.IN_GAME) {
+                        startPointAccumulation();
+                    }
+                    
                     // Mise à jour de l'affichage
                     updateLocalPlayerAccent();
                     renderPlayersList();
@@ -308,6 +342,7 @@
                     break;
 
                 case 'game_over':
+                    stopPointAccumulation();
                     addSystemMessage(`Partie terminée! Le joueur ${playersState.get(data.winnerId)?.name || 'Inconnu'} a gagné par épuisement professionnel.`, 'warning');
                     gameState = GAME_STATES.GAME_OVER;
                     // Mettre à jour l'état local pour passer en mode lobby pour les déconnexions
@@ -325,7 +360,7 @@
                     break;
                 
                 case 'player_left':
-                    addSystemMessage(`Le joueur ${data.leftId} a quitté la partie.`, 'warning');
+                    addSystemMessage(`Un joueur a quitté la partie.`, 'warning');
                     break;
 
                 case 'error':
@@ -366,7 +401,13 @@
          */
         function updateLocalPlayerAccent() {
             const playerColorVar = localPlayer.color;
-            const playerColorValue = getComputedStyle(document.documentElement).getPropertyValue(`--${playerColorVar}`).trim();
+            // Récupère la valeur de la variable CSS --player-color-value associée à la classe du joueur
+            const colorElement = document.createElement('div');
+            colorElement.className = playerColorVar;
+            document.body.appendChild(colorElement);
+            const playerColorValue = getComputedStyle(colorElement).getPropertyValue('--player-color-value').trim() || 'var(--color-accent-white)';
+            colorElement.remove();
+
             document.documentElement.style.setProperty('--accent-player', playerColorValue);
             $modalContent.style.borderColor = playerColorValue;
         }
@@ -376,7 +417,8 @@
          */
         function checkModalReadiness() {
             const name = $modalNameInput.value.trim();
-            const canConnect = name.length > 0 && clientId !== null; // Doit avoir l'ID du serveur
+            // Le bouton est activé si on a un nom ET qu'on a reçu notre ID du serveur (donc la WS est ouverte)
+            const canConnect = name.length > 0 && clientId !== null; 
             $connectButton.disabled = !canConnect;
             $connectText.textContent = canConnect ? "Créer/Joindre la Partie" : (clientId === null ? "Connexion au serveur..." : "Entrez votre nom");
         }
@@ -388,15 +430,19 @@
             $playersList.innerHTML = '';
             
             playersState.forEach(player => {
-                // Définir la couleur du joueur
-                const playerColorVar = getComputedStyle(document.documentElement).getPropertyValue(`--${player.color}`).trim();
+                // Créer un élément temporaire pour obtenir la variable CSS du joueur
+                const colorElement = document.createElement('div');
+                colorElement.className = player.color;
+                document.body.appendChild(colorElement);
+                const playerColorValue = getComputedStyle(colorElement).getPropertyValue('--player-color-value').trim() || 'var(--color-accent-white)';
+                colorElement.remove();
 
                 const isLocal = player.id === clientId;
                 const playerCard = `
                     <div class="p-4 rounded-xl shadow-lg transition-all duration-300" 
-                         style="border: 2px solid ${playerColorVar}; background-color: var(--color-chat-dark);">
+                         style="border: 2px solid ${playerColorValue}; background-color: var(--color-chat-dark);">
                         <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-lg font-bold" style="color: ${playerColorVar};">
+                            <h3 class="text-lg font-bold" style="color: ${playerColorValue};">
                                 ${player.name} ${isLocal ? '(Moi)' : ''} 
                                 ${player.isHost ? '<span class="text-xs ml-1 bg-yellow-600 px-2 py-0.5 rounded-full text-black">Hôte</span>' : ''}
                             </h3>
@@ -406,10 +452,9 @@
                         <!-- Barre de points de travail -->
                         <div class="mb-3">
                             <p class="text-xs font-semibold mb-1 text-gray-300">Points de Travail: ${player.workPoints}</p>
-                            <div class="h-2 rounded-full progress-bar-container">
+                            <div class="h-2 rounded-full progress-bar-container" style="border-color: ${playerColorValue};">
                                 <div class="h-full rounded-full progress-bar" 
-                                     style="width: ${Math.min(100, player.workPoints)}%;"
-                                     data-color="${player.color}">
+                                     style="width: ${Math.min(100, player.workPoints)}%; background-color: ${playerColorValue};">
                                 </div>
                             </div>
                         </div>
@@ -477,8 +522,12 @@
         function addChatMessage(senderId, senderName, text, playerColorClass) {
             const isSelf = senderId === clientId;
             
-            // Trouver la couleur CSS du joueur
-            const colorVar = getComputedStyle(document.documentElement).getPropertyValue(`--${playerColorClass}`).trim();
+            // Créer un élément temporaire pour obtenir la variable CSS du joueur
+            const colorElement = document.createElement('div');
+            colorElement.className = playerColorClass;
+            document.body.appendChild(colorElement);
+            const colorVar = getComputedStyle(colorElement).getPropertyValue('--player-color-value').trim() || 'var(--color-accent-white)';
+            colorElement.remove();
 
             const messageHtml = `
                 <div class="chat-message-bubble p-3 rounded-lg shadow-md transition-all duration-300"
@@ -604,8 +653,7 @@
                     type: 'game_action',
                     action: 'start_game'
                 });
-                // Démarrer l'accumulation de points immédiatement après l'envoi de l'action
-                startPointAccumulation(); 
+                // L'accumulation est démarrée par la réception du message game_state_sync si le jeu démarre.
             }
         });
 
