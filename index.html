@@ -3,991 +3,685 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Épuisement Professionnel - P2P Chat</title>
+    <title>Épuisement Professionnel - Jeu Centralisé</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Game colors */
-            --color-bg-dark: #2A2E33; /* Dark slate gray */
+            /* Couleurs du jeu */
+            --color-bg-dark: #2A2E33; /* Gris ardoise foncé */
             --color-chat-dark: #373b40;
             --color-accent-white: #e0e0e0;
             --color-progress-bar: #e0e0e0;
-            /* Default accent color (white before P2P connection) */
             --accent-player: var(--color-accent-white); 
         }
 
-        /* Player colors (pale) - Used by host for assignment and by all for display */
-        .color-A { --player-color-value: #F8BBD0; } /* Pink */
-        .color-B { --player-color-value: #FFCC80; } /* Orange */
-        .color-C { --player-color-value: #BBDEFB; } /* Blue */
-        .color-D { --player-color-value: #E1BEE7; } /* Violet */
-        .color-E { --player-color-value: #C8E6C9; } /* Green */
-        .color-F { --player-color-value: #B2EBF2; } /* Cyan */
-        .color-G { --player-color-value: #FFF9C4; } /* Yellow */
-        .color-H { --player-color-value: #FFCDD2; } /* Red (Pale) */
-
-        /* General player color utility */
-        .text-player-color { color: var(--accent-player); }
-        .border-player-color { border-color: var(--accent-player); }
-        .bg-player-color { background-color: var(--accent-player); }
-
-        /* General styles */
+        /* Couleurs des joueurs (maintenant définies par le serveur) */
+        .color-A { --player-color-value: #F8BBD0; } /* Rose pâle */
+        .color-B { --player-color-value: #FFCC80; } /* Orange pâle */
+        .color-C { --player-color-value: #BBDEFB; } /* Bleu pâle */
+        .color-D { --player-color-value: #E1BEE7; } /* Violet pâle */
+        
         body {
             font-family: 'Inter', sans-serif;
             background-color: var(--color-bg-dark);
             color: var(--color-accent-white);
-            height: 100vh;
-            overflow: hidden; /* Prevent body scrolling */
-        }
-        
-        #chat-container {
-            height: calc(100vh - 12rem); /* Adjusted for headers and input */
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column-reverse; /* New messages at the bottom */
-            padding-bottom: 0.5rem;
-            
         }
 
-        /* Custom scrollbar for better look */
-        #chat-container::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        #chat-container::-webkit-scrollbar-thumb {
+        /* Styles pour les barres de progression */
+        .progress-bar-container {
+            border: 1px solid var(--player-color-value);
             background-color: var(--color-chat-dark);
-            border-radius: 4px;
         }
 
-        #chat-container::-webkit-scrollbar-track {
-            background-color: var(--color-bg-dark);
-        }
-
-        /* Chat bubbles */
-        .message-bubble {
-            max-width: 80%;
-            padding: 0.5rem 0.75rem;
-            border-radius: 1.25rem;
-            margin-bottom: 0.5rem;
-            line-height: 1.3;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-
-        .sender-left {
-            align-self: flex-start;
-            background-color: var(--color-chat-dark);
-            border-top-left-radius: 0.25rem; /* Smoother transition from modal design */
-            margin-right: auto;
-            border: 2px solid var(--accent-player); /* Color accent */
-            color: var(--color-accent-white);
-        }
-        
-        .sender-right {
-            align-self: flex-end;
-            background-color: var(--color-chat-dark);
-            border-top-right-radius: 0.25rem; /* Smoother transition from modal design */
-            margin-left: auto;
-            border: 2px solid var(--accent-player); /* Color accent */
-            color: var(--color-accent-white);
-        }
-
-        .message-name {
-            font-size: 0.75rem;
-            opacity: 0.7;
-            margin-bottom: 0.25rem;
-            font-weight: 600;
-        }
-
-        /* Responsive adjustments for the chat and input */
-        @media (min-width: 768px) {
-            #chat-container {
-                height: calc(100vh - 9rem);
-                max-width: 600px;
-                margin-left: auto;
-                margin-right: auto;
-            }
-            #input-area {
-                max-width: 600px;
-                margin-left: auto;
-                margin-right: auto;
-            }
-        }
-
-        /* Progress Bar (Aesthetics) */
-        #progress-bar-inner {
-            height: 100%;
-            background-color: var(--color-progress-bar);
+        .progress-bar {
+            background-color: var(--player-color-value);
             transition: width 0.5s ease-out;
         }
         
-        /* Modal Customization */
-        .modal-card {
+        .chat-message-bubble {
             background-color: var(--color-chat-dark);
-            border: 4px solid var(--accent-player);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid var(--accent-player);
+            transition: border-left 0.3s ease;
+        }
+
+        .chat-message-self {
+             /* La couleur du joueur local est définie par --accent-player */
+             border-left: 4px solid var(--accent-player);
+        }
+
+        .chat-message-other {
+             /* Définition dynamique par JS pour les autres joueurs */
         }
         
-        /* Utility for showing IDs (debug only) */
-        .debug-id-text {
-            font-size: 0.65rem;
-            opacity: 0.5;
-            word-break: break-all;
+        /* Style des boutons */
+        .btn-primary {
+            background-color: #3B82F6; /* blue-500 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
         }
-        
-        /* Hidden until game starts, or always hidden for lobby elements on pair */
-        .in-game-element {
-            display: none;
+        .btn-primary:hover {
+            background-color: #2563EB; /* blue-600 */
         }
-        .host-only-element {
-            display: none;
+        .btn-primary:disabled {
+            background-color: #6B7280; /* gray-500 */
+            cursor: not-allowed;
+        }
+
+        /* Styles de l'overlay/modale */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.85);
+            z-index: 50;
+        }
+        .modal-content {
+            background-color: var(--color-chat-dark);
+            border: 2px solid var(--accent-player);
+            transition: border-color 0.3s ease;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            z-index: 60;
         }
     </style>
 </head>
-<body class="flex flex-col">
-    
-    <!-- Modal d'accueil -->
-    <div id="modal-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-        <div id="modal-card" class="modal-card p-6 rounded-xl w-11/12 max-w-md transition-all">
-            <h2 class="text-2xl font-bold mb-4 text-center">Épuisement Professionnel</h2>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- Modale d'accueil (Connexion) -->
+    <div id="modal-container" class="fixed inset-0 flex items-center justify-center modal-overlay">
+        <div id="modal-content" class="modal-content p-6 rounded-lg max-w-sm w-full transition-all duration-300">
+            <h2 class="text-xl font-bold mb-4 text-center">Bienvenue au Bureau!</h2>
             
+            <label for="name-input" class="block mb-2 text-sm font-medium">Votre Nom/Surnom:</label>
+            <input type="text" id="name-input" maxlength="20" class="w-full p-2 mb-4 rounded bg-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 outline-none">
+
             <div class="mb-4">
-                <label for="name-input" class="block text-sm font-medium mb-1">Votre Nom</label>
-                <input type="text" id="name-input" maxlength="20" placeholder="Entrez votre nom"
-                       class="w-full px-4 py-2 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-player-color outline-none transition duration-150 text-white">
+                <label for="room-input" class="block mb-2 text-sm font-medium">ID du Salon (pour joindre):</label>
+                <input type="text" id="room-input" placeholder="Laissez vide pour créer" class="w-full p-2 rounded bg-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 outline-none">
             </div>
 
-            <div class="grid grid-cols-2 gap-4">
-                <!-- Bouton Hôte -->
-                <button id="host-button" disabled
-                        class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Héberger une Partie
-                </button>
-                
-                <!-- Section Rejoindre -->
-                <div class="flex flex-col space-y-2">
-                    <input type="text" id="code-input" maxlength="6" placeholder="Code de l'Hôte"
-                           class="w-full px-4 py-2 rounded-lg bg-gray-700 border-2 border-gray-600 focus:border-player-color outline-none transition duration-150 text-white text-center tracking-widest uppercase">
-                    <button id="join-button" disabled
-                            class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 rounded-xl transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Rejoindre
-                    </button>
+            <button id="connect-button" class="btn-primary w-full" disabled>
+                <span id="connect-text">Connexion...</span>
+            </button>
+            <p id="min-player-text" class="text-xs text-center mt-3 text-gray-400">Min. <span id="start-min-count">2</span> joueurs requis pour commencer.</p>
+        </div>
+    </div>
+
+    <!-- Interface principale du jeu -->
+    <div id="game-container" class="hidden w-full max-w-6xl flex flex-col lg:flex-row rounded-xl shadow-2xl overflow-hidden bg-gray-700">
+
+        <!-- Colonne Gauche: État du Jeu/Joueurs -->
+        <div class="lg:w-2/3 p-6 space-y-6">
+            
+            <div class="flex justify-between items-center pb-2 border-b border-gray-600">
+                <h1 class="text-2xl font-bold">Projet Burnout</h1>
+                <div class="text-sm font-mono text-gray-300">
+                    ID Salon: <span id="current-room-id" class="font-bold text-lg text-yellow-400"></span>
                 </div>
             </div>
+
+            <!-- Boutons de l'Hôte -->
+            <div id="host-controls" class="hidden flex justify-center space-x-4">
+                <button id="start-game-btn" class="btn-primary" disabled>Démarrer la Partie</button>
+            </div>
+
+            <!-- Liste des Joueurs -->
+            <div id="players-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Les cartes de joueur seront insérées ici par JS -->
+            </div>
+
+            <!-- Espace d'Affichage du Jeu Principal -->
+            <div class="bg-gray-800 p-4 rounded-lg h-64 flex items-center justify-center">
+                <p id="game-status-message" class="text-xl font-semibold text-center text-gray-400">En attente des joueurs...</p>
+            </div>
+
+        </div>
+
+        <!-- Colonne Droite: Chat -->
+        <div class="lg:w-1/3 flex flex-col bg-gray-800 p-4">
+            <h2 class="text-lg font-bold mb-3 border-b border-gray-600 pb-2">Chat du Bureau</h2>
             
-            <p id="modal-message" class="text-sm mt-4 text-center text-red-400 hidden">Veuillez entrer votre nom.</p>
+            <!-- Zone de Messages -->
+            <div id="chat-messages" class="flex-grow overflow-y-auto space-y-3 p-2 mb-4 bg-gray-700 rounded">
+                <!-- Les messages de chat seront insérés ici par JS -->
+            </div>
+
+            <!-- Entrée de Message -->
+            <div class="flex space-x-2">
+                <input type="text" id="message-input" placeholder="Écrire un message..." class="flex-grow p-2 rounded bg-gray-600 text-white focus:ring-blue-500 focus:border-blue-500 outline-none">
+                <button id="send-button" class="btn-primary text-sm p-2">Envoyer</button>
+            </div>
         </div>
+
     </div>
-    
-    <!-- Éléments du jeu (visibles après la connexion) -->
-    
-    <!-- Barre de Progression et Score -->
-    <header id="game-header" class="p-3 in-game-element">
-        <!-- Barre de Progression -->
-        <div id="progress-bar" class="w-full h-2 rounded-full bg-gray-700 mb-2 overflow-hidden">
-            <div id="progress-bar-inner" style="width: 0%;"></div>
-        </div>
+
+    <script>
+        // Référence aux éléments DOM
+        const $modalContainer = document.getElementById('modal-container');
+        const $modalContent = document.getElementById('modal-content');
+        const $modalNameInput = document.getElementById('name-input');
+        const $modalRoomInput = document.getElementById('room-input');
+        const $connectButton = document.getElementById('connect-button');
+        const $connectText = document.getElementById('connect-text');
+        const $startMinCount = document.getElementById('start-min-count');
         
-        <!-- Compteurs -->
-        <div class="flex justify-between items-center text-sm font-semibold">
-            <!-- Compte à Rebours (Gauche) -->
-            <div id="countdown-timer" class="text-lg">00:00</div>
+        const $gameContainer = document.getElementById('game-container');
+        const $currentRoomId = document.getElementById('current-room-id');
+        const $hostControls = document.getElementById('host-controls');
+        const $startGameBtn = document.getElementById('start-game-btn');
+        const $playersList = document.getElementById('players-list');
+        const $gameStatusMessage = document.getElementById('game-status-message');
+        
+        const $chatMessages = document.getElementById('chat-messages');
+        const $messageInput = document.getElementById('message-input');
+        const $sendButton = document.getElementById('send-button');
+
+        // --- CONSTANTES ET ÉTATS LOCAUX ---
+        const SERVER_URL = `ws://${window.location.host}`; // Utiliser le même hôte
+        const MIN_PLAYERS = 2; // Doit correspondre à la constante serveur
+        const POINTS_PER_INTERVAL = 1;
+        const TIME_BETWEEN_POINTS_MS = 1000; // 1 point par seconde
+        const BURNOUT_REDUCTION_PER_POINT = 0.05; // Réduction du burnout par point dépensé
+
+        const GAME_STATES = {
+            WAITING_FOR_CLIENT_ID: 'waiting_id',
+            WAITING_FOR_LOBBY: 'waiting_lobby',
+            LOBBY: 'lobby',
+            IN_GAME: 'in_game',
+            GAME_OVER: 'game_over'
+        };
+
+        let ws = null;
+        let clientId = null;
+        let localPlayer = {
+            id: null,
+            name: '',
+            color: 'color-A', // Couleur par défaut avant la connexion
+            isHost: false,
+            workPoints: 0,
+            burnout: 0
+        };
+        let gameState = GAME_STATES.WAITING_FOR_CLIENT_ID;
+        let currentRoomId = null;
+        let playersState = new Map(); // Map<id, player>
+
+        // --- COMMUNICATION AVEC LE SERVEUR ---
+
+        /**
+         * Envoie un message JSON au serveur.
+         * @param {object} data L'objet de données à envoyer.
+         */
+        function sendToServer(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            } else {
+                showAlert('Erreur: Connexion au serveur perdue ou non établie.');
+            }
+        }
+
+        /**
+         * Connecte le client au serveur WebSocket.
+         */
+        function connectSignalingServer() {
+            $connectText.textContent = "Connexion...";
+            $connectButton.disabled = true;
+
+            ws = new WebSocket(SERVER_URL);
+
+            ws.onopen = () => {
+                console.log("Connecté au serveur de jeu.");
+                gameState = GAME_STATES.WAITING_FOR_CLIENT_ID;
+                checkModalReadiness();
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            };
+
+            ws.onclose = () => {
+                console.log("Déconnexion du serveur.");
+                showAlert("Déconnexion du serveur. Veuillez rafraîchir la page.", 'error');
+                resetGame();
+            };
+
+            ws.onerror = (err) => {
+                console.error("Erreur WebSocket:", err);
+                showAlert("Erreur de connexion au serveur.", 'error');
+            };
+        }
+
+        /**
+         * Gère les messages reçus du serveur.
+         * @param {object} data Le message JSON du serveur.
+         */
+        function handleServerMessage(data) {
+            console.log(`Message serveur reçu: ${data.type}`, data);
+
+            switch (data.type) {
+                case 'client_id':
+                    clientId = data.id;
+                    localPlayer.id = data.id;
+                    gameState = GAME_STATES.WAITING_FOR_LOBBY;
+                    $connectText.textContent = "Créer/Joindre la Partie";
+                    checkModalReadiness();
+                    break;
+                
+                case 'lobby_created':
+                case 'lobby_joined':
+                    currentRoomId = data.roomId;
+                    $currentRoomId.textContent = data.roomId;
+                    $modalContainer.classList.add('hidden');
+                    $gameContainer.classList.remove('hidden');
+                    gameState = GAME_STATES.LOBBY;
+                    break;
+
+                case 'game_state_sync':
+                    // Mise à jour de l'état global du jeu
+                    gameState = data.state;
+                    
+                    // Mise à jour de la liste des joueurs
+                    playersState.clear();
+                    data.players.forEach(p => {
+                        playersState.set(p.id, p);
+                        if (p.id === clientId) {
+                            localPlayer = p;
+                        }
+                    });
+
+                    // Mise à jour de l'affichage
+                    updateLocalPlayerAccent();
+                    renderPlayersList();
+                    renderGameStatus();
+                    
+                    // Mise à jour des contrôles de l'hôte
+                    const isHost = localPlayer.isHost;
+                    $hostControls.classList.toggle('hidden', !isHost);
+                    if (isHost && gameState === GAME_STATES.LOBBY) {
+                        $startGameBtn.disabled = playersState.size < MIN_PLAYERS;
+                    }
+                    
+                    break;
+
+                case 'game_start':
+                    addSystemMessage("La partie a commencé! Au travail!", 'system');
+                    break;
+
+                case 'game_over':
+                    addSystemMessage(`Partie terminée! Le joueur ${playersState.get(data.winnerId)?.name || 'Inconnu'} a gagné par épuisement professionnel.`, 'warning');
+                    gameState = GAME_STATES.GAME_OVER;
+                    // Mettre à jour l'état local pour passer en mode lobby pour les déconnexions
+                    localPlayer.isHost = (data.winnerId === clientId); // Garde la notion d'hôte
+                    currentRoomId = data.roomId;
+                    break;
+
+                case 'chat_message':
+                    const sender = playersState.get(data.senderId);
+                    if (sender) {
+                        addChatMessage(data.senderId, sender.name, data.text, sender.color);
+                    } else {
+                        addChatMessage(data.senderId, '???', data.text, 'color-A'); // Message d'un joueur inconnu
+                    }
+                    break;
+                
+                case 'player_left':
+                    addSystemMessage(`Le joueur ${data.leftId} a quitté la partie.`, 'warning');
+                    break;
+
+                case 'error':
+                    showAlert(`Erreur Serveur: ${data.message}`, 'error');
+                    break;
+            }
+        }
+
+        // --- LOGIQUE DE L'INTERFACE UTILISATEUR ET DU JEU ---
+
+        /**
+         * Affiche un message d'alerte (remplace window.alert).
+         * @param {string} message Le message à afficher.
+         * @param {string} [type='info'] Le type de message ('info', 'error', 'warning').
+         */
+        function showAlert(message, type = 'info') {
+            const colorMap = {
+                'info': 'border-blue-500',
+                'error': 'border-red-500',
+                'warning': 'border-yellow-500'
+            };
+            const colorClass = colorMap[type] || colorMap['info'];
             
-            <!-- Compteur de Points (Droite) -->
-            <div id="work-points" class="text-xl font-bold text-player-color">
-                <span class="text-gray-400 mr-1">Points:</span> 0
-            </div>
-        </div>
-    </header>
-
-    <!-- Éléments du Lobby (Visible uniquement après l'initialisation de l'hôte/pair) -->
-    <div id="lobby-view" class="flex-grow flex flex-col justify-center items-center p-6 text-center" style="display: none;">
-        <div class="bg-gray-800 p-6 rounded-xl w-11/12 max-w-md">
-            <h3 class="text-2xl font-bold mb-2">Code du Lobby</h3>
-            <p class="text-5xl font-extrabold text-player-color tracking-widest mb-4 border-2 border-gray-600 p-2 rounded-lg" id="lobby-code-display">---</p>
+            // Créer un simple message en haut de l'écran (à améliorer avec une vraie modale)
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `fixed top-0 left-1/2 transform -translate-x-1/2 mt-4 p-4 rounded-lg shadow-lg text-white font-semibold ${colorClass} bg-gray-700 z-50 transition-all duration-300 border-l-4`;
+            alertDiv.textContent = message;
+            document.body.appendChild(alertDiv);
             
-            <!-- Liste des Joueurs (Commune Hôte/Pair) -->
-            <div id="player-list-container" class="mb-6">
-                <h4 class="text-lg font-semibold mb-2 border-b border-gray-700 pb-1">Joueurs dans le Lobby (<span id="player-count">0</span>/<span id="max-players-display">8</span>)</h4>
-                <ul id="player-list" class="space-y-1 text-left max-h-48 overflow-y-auto">
-                    <!-- Player items will be inserted here -->
-                </ul>
-            </div>
-            
-            <!-- Bouton Démarrer (Hôte seulement) -->
-            <button id="start-game-button" disabled
-                    class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed host-only-element">
-                Démarrer la Partie (<span id="start-min-count">4</span> min)
-            </button>
-            
-            <!-- Message d'attente pour le Pair -->
-            <p id="waiting-message" class="text-sm text-gray-400 mt-4">En attente que l'hôte démarre la partie...</p>
+            setTimeout(() => {
+                alertDiv.classList.add('opacity-0');
+                setTimeout(() => alertDiv.remove(), 300);
+            }, 5000);
+        }
 
-            <!-- Affichage de l'ID (Aide au débogage) -->
-            <div id="debug-info" class="text-center mt-4">
-                <p class="debug-id-text">Votre ID: <span id="local-id-display">N/A</span></p>
-                <p class="debug-id-text">Code/ID Hôte: <span id="host-id-display">N/A</span></p>
-            </div>
-        </div>
-    </div>
+        /**
+         * Met à jour la couleur d'accentuation basée sur la couleur du joueur local.
+         */
+        function updateLocalPlayerAccent() {
+            const playerColorVar = localPlayer.color;
+            const playerColorValue = getComputedStyle(document.documentElement).getPropertyValue(`--${playerColorVar}`).trim();
+            document.documentElement.style.setProperty('--accent-player', playerColorValue);
+            $modalContent.style.borderColor = playerColorValue;
+        }
 
-    <!-- Zone de Chat (Affichée uniquement en jeu) -->
-    <main id="chat-container" class="flex-grow flex flex-col-reverse space-y-reverse overflow-y-auto px-3 in-game-element">
-        <!-- Messages will be appended here -->
-    </main>
-    
-    <!-- Zone de Saisie (Affichée uniquement en jeu) -->
-    <footer id="input-area" class="p-3 bg-gray-800 shadow-lg mt-auto in-game-element">
-        <div class="flex items-center space-x-2">
-            <input type="text" id="message-input" placeholder="Écrire un message..." disabled
-                   class="flex-grow px-4 py-3 rounded-2xl bg-gray-700 border-2 border-gray-600 focus:border-player-color outline-none transition duration-150 text-white placeholder-gray-500">
-            <button id="send-button" disabled
-                    class="p-3 rounded-full bg-gray-600 hover:bg-gray-500 text-white transition duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z"/></svg>
-            </button>
-        </div>
-    </footer>
-
-    <!-- Message box for alerts -->
-    <div id="alert-box" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 p-3 bg-red-600 text-white rounded-lg shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none z-50"></div>
-
-<script>
-    // Configuration
-    const SIGNALING_SERVER_URL = "wss://webrtc-epuisement-professionnel.onrender.com"; 
-    const PEER_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-    const MIN_PLAYERS = 2; // Test value, should be 4-8 in final version
-    const MAX_PLAYERS = 8;
-    const TIME_BETWEEN_POINTS_MS = 10000;
-    const POINTS_PER_INTERVAL = 10;
-
-    // Game States
-    const GAME_STATES = {
-        LOBBY: 'LOBBY',
-        IN_GAME: 'IN_GAME',
-        GAME_OVER: 'GAME_OVER'
-    };
-    
-    // Local State
-    let signalingSocket;
-    let localPlayer = {
-        id: crypto.randomUUID(), // Unique ID for the player (UUID)
-        name: null,
-        colorClass: null,
-        isHost: false,
-        hostCode: null, // The short 6-char code if we are the host
-        hostId: null, // The UUID of the host we are connected to (UUID)
-        workPoints: 0,
-    };
-    let gameState = GAME_STATES.LOBBY; // Initial state
-
-    // P2P State
-    let peerConnections = {}; // Stores RTCPeerConnection objects, keyed by peerId (UUID)
-    let dataChannels = {}; // Stores RTCDataChannel objects, keyed by peerId (UUID)
-    // Stores { id: { name, colorClass, isConnected: boolean } } of ALL players, keyed by ID (UUID)
-    let connectedPlayers = {}; 
-
-    // DOM Elements
-    const $modal = document.getElementById('modal-screen');
-    const $modalNameInput = document.getElementById('name-input');
-    const $modalCodeInput = document.getElementById('code-input');
-    const $hostButton = document.getElementById('host-button');
-    const $joinButton = document.getElementById('join-button');
-    const $modalMessage = document.getElementById('modal-message');
-    const $messageInput = document.getElementById('message-input');
-    const $sendButton = document.getElementById('send-button');
-    const $chatContainer = document.getElementById('chat-container');
-    const $workPointsDisplay = document.getElementById('work-points');
-    const $progressBarInner = document.getElementById('progress-bar-inner');
-    const $alertBox = document.getElementById('alert-box');
-    
-    // Lobby elements
-    const $lobbyView = document.getElementById('lobby-view');
-    const $lobbyCodeDisplay = document.getElementById('lobby-code-display');
-    const $playerList = document.getElementById('player-list');
-    const $playerCount = document.getElementById('player-count');
-    const $maxPlayersDisplay = document.getElementById('max-players-display');
-    const $startGameButton = document.getElementById('start-game-button');
-    const $startMinCount = document.getElementById('start-min-count');
-    const $gameHeader = document.getElementById('game-header');
-    const $inputArea = document.getElementById('input-area');
-    const $waitingMessage = document.getElementById('waiting-message');
-    
-    // Debug
-    const $localIdDisplay = document.getElementById('local-id-display');
-    const $hostIdDisplay = document.getElementById('host-id-display');
-
-    // Player Colors (match CSS classes)
-    const PLAYER_COLORS = ['color-A', 'color-B', 'color-C', 'color-D', 'color-E', 'color-F', 'color-G', 'color-H'];
-    let usedColors = new Set();
-    
-    // --- UTILS ---
-
-    function showAlert(message) {
-        $alertBox.textContent = message;
-        $alertBox.style.opacity = '1';
-        $alertBox.style.pointerEvents = 'auto';
-        setTimeout(() => {
-            $alertBox.style.opacity = '0';
-            $alertBox.style.pointerEvents = 'none';
-        }, 3000);
-    }
-    
-    function updateDebugDisplay() {
-        $localIdDisplay.textContent = localPlayer.id;
-        $hostIdDisplay.textContent = localPlayer.isHost ? localPlayer.hostCode : (localPlayer.hostCode || 'N/A');
-    }
-
-    function assignRandomColor() {
-        if (usedColors.size === PLAYER_COLORS.length) {
-            // Re-assign if all colors are taken (shouldn't happen often)
-            return PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
+        /**
+         * Vérifie si le bouton de connexion de la modale doit être activé.
+         */
+        function checkModalReadiness() {
+            const name = $modalNameInput.value.trim();
+            const canConnect = name.length > 0 && clientId !== null; // Doit avoir l'ID du serveur
+            $connectButton.disabled = !canConnect;
+            $connectText.textContent = canConnect ? "Créer/Joindre la Partie" : (clientId === null ? "Connexion au serveur..." : "Entrez votre nom");
         }
         
-        let availableColors = PLAYER_COLORS.filter(color => !usedColors.has(color));
-        const colorClass = availableColors[Math.floor(Math.random() * availableColors.length)];
-        usedColors.add(colorClass);
-        return colorClass;
-    }
-    
-    function updateAccentColor() {
-        // Ensure localPlayer.colorClass is set before calling
-        if (!localPlayer.colorClass) return;
-
-        const rootStyles = document.documentElement.style;
-        const colorValue = getComputedStyle(document.body).getPropertyValue(`--${localPlayer.colorClass}`).trim();
-        rootStyles.setProperty('--accent-player', colorValue);
-        
-        rootStyles.setProperty('--color-progress-bar', colorValue);
-        $workPointsDisplay.style.color = colorValue;
-        
-        // Update input field and button colors
-        const modalCard = document.getElementById('modal-card');
-        modalCard.style.borderColor = colorValue;
-        $messageInput.style.setProperty('border-color', colorValue, 'important');
-        $sendButton.style.backgroundColor = colorValue; 
-        
-        $lobbyCodeDisplay.style.borderColor = colorValue;
-        $lobbyCodeDisplay.style.color = colorValue;
-    }
-
-    function addMessage(senderId, senderName, senderColorClass, text) {
-        const isLocalSender = senderId === localPlayer.id;
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `flex mb-2 ${isLocalSender ? 'justify-end' : 'justify-start'}`;
-        
-        const bubble = document.createElement('div');
-        bubble.className = `message-bubble ${isLocalSender ? 'sender-right' : 'sender-left'}`;
-        
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'message-name';
-        // Use the player's assigned color (fetched from the CSS variable)
-        const colorValue = getComputedStyle(document.body).getPropertyValue(`--${senderColorClass}`).trim();
-        nameSpan.style.color = colorValue;
-        nameSpan.textContent = senderName;
-        
-        const textP = document.createElement('p');
-        textP.textContent = text;
-        
-        bubble.appendChild(nameSpan);
-        bubble.appendChild(textP);
-        messageDiv.appendChild(bubble);
-        
-        $chatContainer.prepend(messageDiv); 
-    }
-    
-    function updateWorkPoints(points) {
-        localPlayer.workPoints = points;
-        $workPointsDisplay.innerHTML = `<span class="text-gray-400 mr-1">Points:</span> ${localPlayer.workPoints}`;
-    }
-    
-    // Updates the player list in the lobby and the Start button status
-    function updateLobbyPlayersDisplay(players) {
-        $playerList.innerHTML = '';
-        const playerArray = Object.values(players);
-        
-        playerArray.forEach(player => {
-            const listItem = document.createElement('li');
-            listItem.className = 'flex justify-between items-center px-2 py-1 rounded-lg';
+        /**
+         * Rend la liste des joueurs dans le DOM.
+         */
+        function renderPlayersList() {
+            $playersList.innerHTML = '';
             
-            const colorValue = getComputedStyle(document.body).getPropertyValue(`--${player.colorClass}`).trim();
+            playersState.forEach(player => {
+                // Définir la couleur du joueur
+                const playerColorVar = getComputedStyle(document.documentElement).getPropertyValue(`--${player.color}`).trim();
 
-            const nameSpan = document.createElement('span');
-            nameSpan.className = 'font-medium';
-            nameSpan.style.color = colorValue;
-            nameSpan.textContent = player.name + (player.id === localPlayer.id ? " (Vous)" : "");
+                const isLocal = player.id === clientId;
+                const playerCard = `
+                    <div class="p-4 rounded-xl shadow-lg transition-all duration-300" 
+                         style="border: 2px solid ${playerColorVar}; background-color: var(--color-chat-dark);">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-lg font-bold" style="color: ${playerColorVar};">
+                                ${player.name} ${isLocal ? '(Moi)' : ''} 
+                                ${player.isHost ? '<span class="text-xs ml-1 bg-yellow-600 px-2 py-0.5 rounded-full text-black">Hôte</span>' : ''}
+                            </h3>
+                            <span class="text-xs font-mono text-gray-400">ID: ${player.id}</span>
+                        </div>
+
+                        <!-- Barre de points de travail -->
+                        <div class="mb-3">
+                            <p class="text-xs font-semibold mb-1 text-gray-300">Points de Travail: ${player.workPoints}</p>
+                            <div class="h-2 rounded-full progress-bar-container">
+                                <div class="h-full rounded-full progress-bar" 
+                                     style="width: ${Math.min(100, player.workPoints)}%;"
+                                     data-color="${player.color}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Barre de Burnout -->
+                        <div>
+                            <p class="text-xs font-semibold mb-1 text-red-400">Burnout: ${player.burnout.toFixed(1)}%</p>
+                            <div class="h-2 rounded-full progress-bar-container border-red-500">
+                                <div class="h-full rounded-full" 
+                                     style="width: ${player.burnout}%; background-color: #EF4444;">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bouton d'action (exemple de dépense de points) -->
+                        <button onclick="spendWorkPoints('${player.id}')" 
+                                class="mt-4 w-full text-xs font-semibold py-1 rounded transition-colors duration-200 
+                                       ${isLocal && player.workPoints >= 1 ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-500 cursor-not-allowed'}"
+                                       ${isLocal && player.workPoints >= 1 ? '' : 'disabled'}
+                                >
+                                Dépenser 1 pt (Réduit Burnout)
+                        </button>
+                    </div>
+                `;
+                $playersList.insertAdjacentHTML('beforeend', playerCard);
+            });
+        }
+        
+        /**
+         * Rend le message d'état du jeu.
+         */
+        function renderGameStatus() {
+            let message = "";
+            let color = "text-gray-400";
             
-            const statusSpan = document.createElement('span');
-            // If the player is the host, show connected only if they are the local player (they are always connected to themselves)
-            // If the player is a peer, check isConnected flag from the host's list
-            const isConnected = player.isConnected || (localPlayer.isHost && player.id === localPlayer.id); 
+            switch (gameState) {
+                case GAME_STATES.LOBBY:
+                    message = `Salon Prêt. ${playersState.size}/${MIN_PLAYERS} joueurs. ${localPlayer.isHost ? "Cliquez sur Démarrer quand prêt." : "En attente de l'hôte."}`;
+                    color = "text-yellow-400";
+                    break;
+                case GAME_STATES.IN_GAME:
+                    message = "Travail en cours... Accumulez des points!";
+                    color = "text-green-400";
+                    break;
+                case GAME_STATES.GAME_OVER:
+                    message = "Partie terminée! Félicitations (ou non)!";
+                    color = "text-red-400";
+                    break;
+                case GAME_STATES.WAITING_FOR_LOBBY:
+                    message = "En attente de création/jonction de salon.";
+                    color = "text-gray-400";
+                    break;
+                default:
+                    message = "État inconnu.";
+            }
 
-            statusSpan.className = `text-xs font-semibold px-2 py-0.5 rounded-full ${isConnected ? 'bg-green-700' : 'bg-red-700'}`;
-            statusSpan.textContent = isConnected ? 'Connecté' : 'Signalisation';
+            $gameStatusMessage.className = `text-xl font-semibold text-center ${color}`;
+            $gameStatusMessage.textContent = message;
+        }
 
-            listItem.appendChild(nameSpan);
-            listItem.appendChild(statusSpan);
-            $playerList.appendChild(listItem);
+
+        /**
+         * Ajoute un message de chat normal à l'interface.
+         */
+        function addChatMessage(senderId, senderName, text, playerColorClass) {
+            const isSelf = senderId === clientId;
+            
+            // Trouver la couleur CSS du joueur
+            const colorVar = getComputedStyle(document.documentElement).getPropertyValue(`--${playerColorClass}`).trim();
+
+            const messageHtml = `
+                <div class="chat-message-bubble p-3 rounded-lg shadow-md transition-all duration-300"
+                     style="border-left: 4px solid ${colorVar};">
+                    <p class="text-xs font-semibold mb-1" style="color: ${colorVar};">${senderName}</p>
+                    <p class="text-sm text-white">${text}</p>
+                </div>
+            `;
+            $chatMessages.insertAdjacentHTML('beforeend', messageHtml);
+            $chatMessages.scrollTop = $chatMessages.scrollHeight; // Scroll vers le bas
+        }
+
+        /**
+         * Ajoute un message système (ex: joueur a rejoint, partie démarrée).
+         */
+        function addSystemMessage(text, type = 'info') {
+            const colorMap = {
+                'info': 'text-blue-400',
+                'warning': 'text-yellow-400',
+                'system': 'text-green-400'
+            };
+            const colorClass = colorMap[type] || colorMap['info'];
+            
+            const messageHtml = `
+                <p class="text-center text-xs italic ${colorClass} pt-2 border-t border-gray-600">${text}</p>
+            `;
+            $chatMessages.insertAdjacentHTML('beforeend', messageHtml);
+            $chatMessages.scrollTop = $chatMessages.scrollHeight;
+        }
+
+        // --- GESTION DES POINTS DE TRAVAIL ET BURNOUT (Logique Client) ---
+        
+        let pointInterval = null;
+
+        function startPointAccumulation() {
+            if (pointInterval) clearInterval(pointInterval);
+            pointInterval = setInterval(() => {
+                if (localPlayer.id && gameState === GAME_STATES.IN_GAME) { 
+                    updateWorkPoints(localPlayer.workPoints + POINTS_PER_INTERVAL);
+                }
+            }, TIME_BETWEEN_POINTS_MS);
+        }
+
+        function stopPointAccumulation() {
+            if (pointInterval) clearInterval(pointInterval);
+            pointInterval = null;
+        }
+
+        /**
+         * Met à jour les points de travail et les envoie au serveur.
+         * @param {number} newPoints La nouvelle valeur des points.
+         */
+        function updateWorkPoints(newPoints) {
+            localPlayer.workPoints = newPoints;
+            sendToServer({
+                type: 'game_action',
+                action: 'update_work_points',
+                value: newPoints
+            });
+        }
+        
+        /**
+         * Met à jour le niveau de burnout et l'envoie au serveur.
+         * @param {number} newBurnout La nouvelle valeur du burnout.
+         */
+        function updateBurnout(newBurnout) {
+            localPlayer.burnout = Math.max(0, Math.min(100, newBurnout));
+            sendToServer({
+                type: 'game_action',
+                action: 'update_burnout',
+                value: localPlayer.burnout
+            });
+        }
+
+        /**
+         * Fonction appelée lorsque le joueur local clique pour dépenser des points.
+         * @param {string} playerId L'ID du joueur pour lequel dépenser (doit être le joueur local).
+         */
+        function spendWorkPoints(playerId) {
+            if (playerId !== clientId || gameState !== GAME_STATES.IN_GAME) return;
+            
+            if (localPlayer.workPoints >= 1) {
+                // Dépenser 1 point de travail
+                updateWorkPoints(localPlayer.workPoints - 1);
+                
+                // Réduire le burnout (exemple: 0.05% de réduction par point)
+                updateBurnout(localPlayer.burnout - BURNOUT_REDUCTION_PER_POINT);
+            }
+        }
+        
+        // --- GESTION DES ÉVÉNEMENTS DOM ---
+
+        // Événement: Connexion au salon
+        $connectButton.addEventListener('click', () => {
+            localPlayer.name = $modalNameInput.value.trim();
+            const roomId = $modalRoomInput.value.trim();
+
+            if (localPlayer.name.length === 0) {
+                showAlert('Veuillez entrer un nom.');
+                return;
+            }
+
+            if (roomId.length > 0) {
+                // Tente de joindre un salon
+                sendToServer({
+                    type: 'join_lobby',
+                    roomId: roomId,
+                    playerName: localPlayer.name
+                });
+            } else {
+                // Crée un nouveau salon
+                sendToServer({
+                    type: 'create_lobby',
+                    playerName: localPlayer.name
+                });
+            }
         });
         
-        $playerCount.textContent = playerArray.length;
-        
-        // Host-only logic
-        if (localPlayer.isHost) {
-            document.querySelector('.host-only-element').style.display = 'block';
-            $waitingMessage.style.display = 'none';
-
-            const connectedCount = playerArray.filter(p => p.isConnected).length;
-            const canStart = connectedCount >= MIN_PLAYERS;
-            
-            $startGameButton.disabled = !canStart;
-            $startGameButton.textContent = canStart 
-                ? "Démarrer la Partie" 
-                : `Démarrer la Partie (${connectedCount}/${MIN_PLAYERS} min)`;
-        } else {
-            // Peer logic
-            document.querySelector('.host-only-element').style.display = 'none';
-            $waitingMessage.style.display = 'block';
-        }
-    }
-    
-    // Hides lobby and shows game elements
-    function setGameState(newState) {
-        gameState = newState;
-
-        if (newState === GAME_STATES.IN_GAME) {
-            $lobbyView.style.display = 'none';
-            document.querySelectorAll('.in-game-element').forEach(el => el.style.display = 'block');
-            showAlert("La partie est lancée !");
-        } else if (newState === GAME_STATES.LOBBY) {
-             document.querySelectorAll('.in-game-element').forEach(el => el.style.display = 'none');
-             $lobbyView.style.display = 'flex';
-        }
-    }
-
-
-    // --- P2P / SIGNALING LOGIC ---
-    
-    function registerClient() {
-        // Host registers with the short hostCode (6 chars)
-        // Peer registers with its full UUID (to receive direct Offers/Candidates)
-        const registrationId = localPlayer.isHost ? localPlayer.hostCode : localPlayer.id;
-
-        const registerMessage = {
-            type: 'register_client',
-            senderId: registrationId,
-        };
-        
-        if (signalingSocket.readyState === WebSocket.OPEN) {
-            signalingSocket.send(JSON.stringify(registerMessage));
-            console.log(`[P2P] Client registered with ID: ${registrationId} (Type: ${localPlayer.isHost ? 'Host' : 'Peer'})`);
-        } else {
-            console.error('[P2P] Registration failed: Socket not open.');
-        }
-    }
-
-    function connectSignalingServer() {
-        signalingSocket = new WebSocket(SIGNALING_SERVER_URL);
-        
-        signalingSocket.onopen = () => {
-            console.log('[P2P] Connected to signaling server.');
-            if (localPlayer.hostCode) { // If role is already chosen
-                 registerClient();
+        // Événement: L'hôte clique sur Démarrer la Partie
+        $startGameBtn.addEventListener('click', () => {
+            if (localPlayer.isHost && gameState === GAME_STATES.LOBBY) {
+                sendToServer({
+                    type: 'game_action',
+                    action: 'start_game'
+                });
+                // Démarrer l'accumulation de points immédiatement après l'envoi de l'action
+                startPointAccumulation(); 
             }
-        };
+        });
 
-        signalingSocket.onmessage = handleSignalingMessage;
-
-        signalingSocket.onclose = () => {
-            console.log('[P2P] Disconnected from signaling server.');
-            showAlert("Disconnected from signaling server.");
-        };
-
-        signalingSocket.onerror = (error) => {
-            console.error('[P2P] WebSocket error:', error);
-            showAlert("Error connecting to signaling server.");
-        };
-    }
-    
-    /**
-     * @description Broadcasts data to all currently OPEN DataChannels.
-     * Only used by the Host.
-     */
-    function broadcastData(data) {
-        const message = JSON.stringify(data);
-        let sentCount = 0;
-        for (const peerId in dataChannels) {
-            const channel = dataChannels[peerId];
-            if (channel && channel.readyState === 'open') {
-                channel.send(message);
-                sentCount++;
-            }
-        }
-        console.log(`[P2P] Message broadcasted to ${sentCount} peers.`);
-    }
-
-    /**
-     * @description Creates an RTCPeerConnection and initializes Data Channels.
-     */
-    function setupPeerConnection(peerId, isHost, peerName, peerColorClass) {
-        if (peerConnections[peerId]) {
-            console.warn(`[P2P] Connection with ${peerId} already exists.`);
-            return peerConnections[peerId];
-        }
-
-        const pc = new RTCPeerConnection(PEER_CONFIG);
-        peerConnections[peerId] = pc;
-        
-        // 1. ICE Candidates
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                const candidateMessage = {
-                    type: 'candidate',
-                    senderId: localPlayer.id, // My UUID
-                    // If Host, send to the Peer (UUID). If Peer, send to Host (HostCode)
-                    receiverId: isHost ? peerId : localPlayer.hostCode, 
-                    candidate: event.candidate
-                };
-                signalingSocket.send(JSON.stringify(candidateMessage));
-            }
-        };
-
-        // 2. State changes (WebRTC connected/disconnected)
-        pc.onconnectionstatechange = () => {
-            console.log(`[P2P] Connection state with ${peerId}: ${pc.connectionState}`);
-            
-            if (pc.connectionState === 'connected') {
-                console.log(`[P2P] WebRTC connection established with ${peerId}.`);
-                showAlert(`WebRTC connection established with ${peerName || peerId}.`);
-                
-                // Update player status in the list
-                if (connectedPlayers[peerId]) {
-                    connectedPlayers[peerId].isConnected = true;
-                }
-                
-                // Host must update display and broadcast new list
-                if (isHost) {
-                    updateLobbyPlayersDisplay(connectedPlayers);
-                    broadcastData({
-                        type: 'player_list_update',
-                        players: connectedPlayers
-                    });
-                }
-            } else if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-                // Handle disconnection
-                if (connectedPlayers[peerId]) {
-                    delete connectedPlayers[peerId];
-                    delete dataChannels[peerId];
-                    delete peerConnections[peerId];
-                    showAlert(`Player ${peerName || peerId} disconnected.`);
-                }
-                if (isHost) {
-                    updateLobbyPlayersDisplay(connectedPlayers);
-                    broadcastData({
-                        type: 'player_list_update',
-                        players: connectedPlayers
-                    });
-                }
-            }
-        };
-        
-        return pc;
-    }
-
-    /**
-     * @description Handles Data Channel initialization (when created or received).
-     */
-    function setupDataChannel(dataChannel, peerId) {
-        dataChannels[peerId] = dataChannel;
-        
-        dataChannel.onopen = () => {
-            console.log(`[P2P] DataChannel 'game_channel' opened with ${peerId}`);
-            
-            if (localPlayer.isHost) {
-                 // CRITICAL: Host sends the full player list immediately upon channel open
-                 dataChannel.send(JSON.stringify({
-                     type: 'player_list_update',
-                     players: connectedPlayers
-                 }));
-                 // Send game state just in case
-                 dataChannel.send(JSON.stringify({
-                     type: 'game_state_update',
-                     gameState: gameState
-                 }));
-            }
-            
-            // Activate input only if the game is already IN_GAME
-            if (gameState === GAME_STATES.IN_GAME) {
-                $messageInput.disabled = false;
-                $sendButton.disabled = false;
-                $messageInput.focus();
-            }
-        };
-
-        dataChannel.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                handleP2PData(data, peerId);
-            } catch (e) {
-                console.error('[P2P] P2P parsing error:', e);
-            }
-        };
-        
-        dataChannel.onclose = () => {
-            // Handled in onconnectionstatechange
-        };
-        
-        dataChannel.onerror = (error) => {
-            console.error(`[P2P] DataChannel error with ${peerId}:`, error);
-        };
-    }
-
-    /**
-     * @description Handles messages received via the signaling server (WebSocket).
-     */
-    function handleSignalingMessage(event) {
-        try {
-            const message = JSON.parse(event.data);
-            
-            const isTargetedToHost = message.receiverId === localPlayer.hostCode && localPlayer.isHost;
-            const isTargetedToPeer = message.receiverId === localPlayer.id && !localPlayer.isHost;
-            
-            // 1. Join Request (Host receives on its HostCode)
-            if (message.type === 'join_request' && localPlayer.isHost && message.hostId === localPlayer.hostCode) {
-                console.log(`[P2P] Host received join request from ${message.joinerId}`);
-                
-                const peerId = message.joinerId; // Peer's UUID
-                if (peerConnections[peerId] || Object.keys(connectedPlayers).length >= MAX_PLAYERS) return;
-                
-                // 1. Register new player
-                const color = assignRandomColor();
-                connectedPlayers[peerId] = { 
-                    id: peerId, 
-                    name: message.joinerName, 
-                    colorClass: color,
-                    isConnected: false // Not WebRTC connected yet
-                };
-                updateLobbyPlayersDisplay(connectedPlayers); 
-                
-                const pc = setupPeerConnection(peerId, true, message.joinerName, color);
-                const dataChannel = pc.createDataChannel('game_channel');
-                setupDataChannel(dataChannel, peerId);
-                
-                pc.createOffer()
-                    .then(offer => pc.setLocalDescription(offer))
-                    .then(() => {
-                        const offerMessage = {
-                            type: 'offer',
-                            senderId: localPlayer.id, // Host's UUID
-                            receiverId: peerId, // Target: Peer's UUID
-                            sdp: pc.localDescription,
-                            hostName: localPlayer.name,
-                            joinerColorClass: color, // Send the assigned color
-                            hostId: localPlayer.id, // Host's UUID for Peer's candidate routing
-                        };
-                        signalingSocket.send(JSON.stringify(offerMessage));
-                        console.log(`[P2P] Host sent offer to ${peerId}`);
-                    });
-            }
-
-            // 2. Offer (Peer receives on its UUID)
-            else if (message.type === 'offer' && isTargetedToPeer) {
-                console.log(`[P2P] Peer received offer from ${message.senderId}`);
-                
-                const hostId = message.senderId; // Host's UUID
-                localPlayer.hostId = hostId; // Store Host's UUID
-                
-                // Update local player info with color assigned by host
-                localPlayer.colorClass = message.joinerColorClass;
-                localPlayer.name = localPlayer.name + ' (Vous)'; // Update name for display
-                updateAccentColor();
-                updateDebugDisplay();
-
-                // 1. Register the Host in the player list
-                connectedPlayers[hostId] = { 
-                    id: hostId, 
-                    name: message.hostName + ' (Hôte)', 
-                    colorClass: assignRandomColor(), // Host color is assigned randomly by peer, it is not critical
-                    isConnected: true // Assume Host is connected to itself
-                };
-                // Peer adds itself (temporarily to see itself)
-                connectedPlayers[localPlayer.id] = { 
-                    id: localPlayer.id, 
-                    name: localPlayer.name, 
-                    colorClass: localPlayer.colorClass,
-                    isConnected: false // Still needs WebRTC to connect
-                };
-                updateLobbyPlayersDisplay(connectedPlayers);
-
-                const pc = setupPeerConnection(hostId, false, message.hostName, message.joinerColorClass);
-
-                pc.ondatachannel = (event) => {
-                    setupDataChannel(event.channel, hostId);
-                };
-
-                pc.setRemoteDescription(new RTCSessionDescription(message.sdp))
-                    .then(() => pc.createAnswer())
-                    .then(answer => pc.setLocalDescription(answer))
-                    .then(() => {
-                        const answerMessage = {
-                            type: 'answer',
-                            senderId: localPlayer.id, // My UUID
-                            receiverId: localPlayer.hostCode, // Target: HostCode
-                            sdp: pc.localDescription
-                        };
-                        signalingSocket.send(JSON.stringify(answerMessage));
-                        console.log(`[P2P] Peer sent answer to host ${localPlayer.hostCode}`);
-                    });
-            }
-
-            // 3. Answer (Host receives on its HostCode)
-            else if (message.type === 'answer' && isTargetedToHost) {
-                console.log(`[P2P] Host received answer from ${message.senderId}`);
-                const peerId = message.senderId; // Peer's UUID
-                const pc = peerConnections[peerId];
-                if (pc) {
-                    pc.setRemoteDescription(new RTCSessionDescription(message.sdp))
-                        .catch(e => console.error('[P2P] setRemoteDescription (Answer) error:', e));
-                }
-            }
-
-            // 4. ICE Candidate
-            else if (message.type === 'candidate') {
-                 if (isTargetedToHost) {
-                    // It's a Peer sending, senderId is the Peer's UUID
-                    const pc = peerConnections[message.senderId]; 
-                    if (pc && message.candidate) {
-                        pc.addIceCandidate(new RTCIceCandidate(message.candidate))
-                            .catch(e => console.error('[P2P] addIceCandidate (Host) error:', e));
-                    }
-                 } 
-                 else if (isTargetedToPeer) {
-                    // It's the Host sending, PC ID is the Host's UUID
-                    const pc = peerConnections[localPlayer.hostId]; 
-                    if (pc && message.candidate) {
-                        pc.addIceCandidate(new RTCIceCandidate(message.candidate))
-                            .catch(e => console.error('[P2P] addIceCandidate (Peer) error:', e));
-                    }
-                 }
-            }
-            
-            // 5. Server Error Message
-            else if (message.type === 'error') {
-                 showAlert(`Server Error: ${message.message}`);
-                 console.error(`[P2P] Server error: ${message.message}`);
-            }
-
-        } catch (e) {
-            console.error('[P2P] Error in handleSignalingMessage:', e);
-        }
-    }
-    
-    /**
-     * @description Handles messages received via Data Channels (P2P).
-     */
-    function handleP2PData(data, senderId) {
-        switch (data.type) {
-            case 'chat':
-                const chatSenderId = data.senderId || senderId; 
-                const sender = connectedPlayers[chatSenderId] || { name: 'Inconnu', colorClass: 'color-A' };
-                addMessage(chatSenderId, sender.name, sender.colorClass, data.text);
-                break;
-                
-            case 'player_list_update':
-                // Received by all peers from the host to update the player list
-                console.log("[P2P] Received player list update:", data.players);
-                
-                // Update local player state
-                connectedPlayers = data.players; 
-                
-                // Ensure local player info is up to date (especially color assigned by host)
-                if (connectedPlayers[localPlayer.id] && connectedPlayers[localPlayer.id].colorClass !== localPlayer.colorClass) {
-                    localPlayer.colorClass = connectedPlayers[localPlayer.id].colorClass;
-                    updateAccentColor();
-                }
-                
-                // Display list in the lobby
-                if (gameState === GAME_STATES.LOBBY) {
-                    updateLobbyPlayersDisplay(connectedPlayers);
-                }
-                break;
-                
-            case 'game_state_update':
-                // Received by all peers from the host to change game state
-                console.log("[P2P] Game state change received:", data.gameState);
-                if (data.gameState === GAME_STATES.IN_GAME) {
-                    setGameState(GAME_STATES.IN_GAME);
-                    // Peer activates input
-                    $messageInput.disabled = false;
-                    $sendButton.disabled = false;
-                    $messageInput.focus();
-                }
-                break;
-                
-            default:
-                console.log('[P2P] Unknown P2P data:', data);
-        }
-    }
+        // Événement: Saisie du nom ou de l'ID du salon
+        $modalNameInput.addEventListener('input', checkModalReadiness);
+        $modalRoomInput.addEventListener('input', checkModalReadiness);
 
 
-    // --- UI/STATE HANDLERS ---
-    
-    function checkModalReadiness() {
-        const nameValid = $modalNameInput.value.trim().length > 0;
-        $hostButton.disabled = !nameValid;
-        $joinButton.disabled = !nameValid || $modalCodeInput.value.trim().length !== 6;
-        
-        $modalMessage.classList.toggle('hidden', nameValid);
-    }
-    
-    function initializeLocalPlayer(isHost, code) {
-        localPlayer.name = $modalNameInput.value.trim();
-        localPlayer.isHost = isHost;
-        localPlayer.hostCode = code;
-        
-        // Host assigns its own color. Peer gets a temporary one (will be overwritten by host)
-        localPlayer.colorClass = assignRandomColor(); 
-        
-        // --- CRITICAL STEP: Register with server ---
-        if (signalingSocket && signalingSocket.readyState === WebSocket.OPEN) {
-            registerClient();
-        } else {
-            connectSignalingServer(); // Registration happens in onopen
-        }
-
-        // Add local player to the connected players list
-        connectedPlayers[localPlayer.id] = { 
-            id: localPlayer.id, 
-            name: localPlayer.name + (isHost ? ' (Hôte - Vous)' : ' (Vous)'), 
-            colorClass: localPlayer.colorClass,
-            isConnected: isHost // Host is always connected to itself
-        };
-        
-        if (isHost) {
-            localPlayer.hostId = localPlayer.id; // Host uses its own UUID
-        }
-
-        updateDebugDisplay();
-        updateAccentColor();
-        setGameState(GAME_STATES.LOBBY); // Go to lobby screen
-        
-        $lobbyCodeDisplay.textContent = code;
-        updateLobbyPlayersDisplay(connectedPlayers);
-        $modal.classList.add('hidden');
-    }
-
-    // --- EVENTS ---
-
-    $modalNameInput.addEventListener('input', checkModalReadiness);
-    $modalCodeInput.addEventListener('input', checkModalReadiness);
-    
-    // 1. Host Button
-    $hostButton.onclick = () => {
-        const hostCode = Array.from({ length: 6 }, () => Math.random().toString(36)[2].toUpperCase()).join('');
-        initializeLocalPlayer(true, hostCode);
-        showAlert(`Partie créée. Code de l'hôte: ${hostCode}`);
-    };
-
-    // 2. Join Button
-    $joinButton.onclick = () => {
-        const hostCode = $modalCodeInput.value.trim().toUpperCase();
-        if (hostCode.length !== 6) return;
-        
-        initializeLocalPlayer(false, hostCode); 
-        showAlert(`Tentative de connexion à l'hôte ${hostCode}...`);
-        
-        const message = {
-            type: 'join_request',
-            joinerId: localPlayer.id, // My UUID
-            hostId: hostCode, // Host's registration ID on the server
-            joinerName: localPlayer.name,
-            joinerColorClass: localPlayer.colorClass, // Temp color for host
-        };
-        signalingSocket.send(JSON.stringify(message));
-        console.log(`[P2P] Sent join request to host ${hostCode}`);
-    };
-    
-    // 3. Start Game Button (Host only)
-    $startGameButton.onclick = () => {
-        if (!localPlayer.isHost || gameState !== GAME_STATES.LOBBY || $startGameButton.disabled) return;
-        
-        console.log("[GAME] Game start requested by host.");
-        setGameState(GAME_STATES.IN_GAME);
-        
-        const startGameMessage = {
-            type: 'game_state_update',
-            gameState: GAME_STATES.IN_GAME,
-        };
-        
-        broadcastData(startGameMessage);
-        
-        // Host also activates its input
-        $messageInput.disabled = false;
-        $sendButton.disabled = false;
-        $messageInput.focus();
-    };
-
-    // 4. Chat Message Send
-    function handleMessageSend() {
-        const messageText = $messageInput.value.trim();
-        if (messageText.length > 0 && gameState === GAME_STATES.IN_GAME) {
-            
-            // Check if there is at least one open connection (Host is always 'connected')
-            const hasOpenChannels = Object.keys(dataChannels).some(id => dataChannels[id].readyState === 'open');
-
-            if (localPlayer.isHost || hasOpenChannels) {
-                
-                addMessage(localPlayer.id, localPlayer.name.replace(' (Vous)', ''), localPlayer.colorClass, messageText);
-                
-                const chatMessage = {
-                    type: 'chat',
-                    senderId: localPlayer.id,
-                    text: messageText,
-                };
-                
-                broadcastData(chatMessage);
-                
+        // Événement: Envoi de Message de Chat
+        function handleMessageSend() {
+            const message = $messageInput.value.trim();
+            if (message.length > 0 && gameState === GAME_STATES.IN_GAME) {
+                sendToServer({
+                    type: 'game_action',
+                    action: 'chat_message',
+                    text: message
+                });
                 $messageInput.value = '';
                 $messageInput.focus();
-            } else {
-                 showAlert("Error: No open P2P connections to send the message.");
+            } else if (message.length > 0) {
+                 showAlert("Vous ne pouvez chatter qu'une fois la partie démarrée.", 'warning');
+                 $messageInput.value = '';
             }
         }
-    }
-    
-    $sendButton.addEventListener('click', handleMessageSend);
-    $messageInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault(); 
-            handleMessageSend();
-        }
-    });
+        
+        $sendButton.addEventListener('click', handleMessageSend);
+        $messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); 
+                handleMessageSend();
+            }
+        });
 
-    // --- INITIALIZATION ---
-
-    window.onload = () => {
-        // 1. Initialize signaling server connection
-        connectSignalingServer(); 
-        
-        // 2. Initialize default accent color (white)
-        document.documentElement.style.setProperty('--accent-player', 'var(--color-accent-white)');
-        
-        // 3. Display min players for start
-        $startMinCount.textContent = MIN_PLAYERS;
-        
-        // 4. Focus on modal input
-        $modalNameInput.focus();
-        
-        // 5. Check initial button readiness
-        checkModalReadiness();
-        
-        // 6. Work points accumulation demo
+        // Mise à jour continue du Burnout (Logique de danger)
         setInterval(() => {
-            if (localPlayer.name && gameState === GAME_STATES.IN_GAME) { 
-                updateWorkPoints(localPlayer.workPoints + POINTS_PER_INTERVAL);
+            // Le burnout augmente passivement en jeu
+            if (gameState === GAME_STATES.IN_GAME && localPlayer.id) {
+                // Simuler l'accumulation de burnout
+                updateBurnout(localPlayer.burnout + 0.1); 
             }
-        }, TIME_BETWEEN_POINTS_MS);
-    };
-    
-</script>
+        }, 3000); // Augmente de 0.1% toutes les 3 secondes
+
+        // --- INITIALISATION ---
+
+        window.onload = () => {
+            // 1. Initialize signaling server connection
+            connectSignalingServer(); 
+            
+            // 2. Initialiser la couleur d'accent par défaut (blanc)
+            document.documentElement.style.setProperty('--accent-player', 'var(--color-accent-white)');
+            
+            // 3. Afficher le nombre minimum de joueurs pour commencer
+            $startMinCount.textContent = MIN_PLAYERS;
+            
+            // 4. Focus sur l'entrée de la modale
+            $modalNameInput.focus();
+            
+            // 5. Vérifier la préparation initiale du bouton
+            checkModalReadiness();
+        };
+
+        function resetGame() {
+            stopPointAccumulation();
+            clientId = null;
+            localPlayer = { id: null, name: '', color: 'color-A', isHost: false, workPoints: 0, burnout: 0 };
+            gameState = GAME_STATES.WAITING_FOR_CLIENT_ID;
+            currentRoomId = null;
+            playersState.clear();
+            $gameContainer.classList.add('hidden');
+            $modalContainer.classList.remove('hidden');
+            checkModalReadiness();
+            $chatMessages.innerHTML = '';
+            $playersList.innerHTML = '';
+            $currentRoomId.textContent = '';
+        }
+
+    </script>
 </body>
 </html>
