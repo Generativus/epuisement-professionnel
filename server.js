@@ -1,394 +1,251 @@
-const WebSocket = require('ws');
-const PORT = process.env.PORT || 8080; 
-
-// --- STRUCTURES DE DONNÉES GLOBALES ---
-
-// Map pour stocker les connexions WebSocket par ID de client (joueur)
-const connectedClients = new Map();
-
-// Map pour stocker les salons de jeu actifs. Clé: roomId, Valeur: { players: Map<clientId, playerState>, hostId: string, state: GAME_STATES }
-const gameRooms = new Map();
-
-// États du jeu (pour le serveur)
-const GAME_STATES = {
-    WAITING_FOR_HOST: 'waiting',
-    LOBBY: 'lobby',
-    IN_GAME: 'in_game',
-    GAME_OVER: 'game_over'
-};
-
-const MIN_PLAYERS = 2; // Nombre minimum de joueurs requis pour démarrer
-
-// --- FONCTIONS UTILITAIRES ---
-
 /**
- * Envoie un message JSON à un client spécifique.
- * @param {string} clientId L'ID du client destinataire.
- * @param {object} data L'objet de données à envoyer.
+ * Serveur WebSocket pour l'application de chat de groupe.
+ *
+ * Ce script utilise Node.js et la bibliothèque 'ws' pour gérer :
+ * 1. La création et la jonction de salons (lobbies) via un code à 5 chiffres.
+ * 2. Le routage des messages en temps réel uniquement aux membres du même salon.
+ *
+ * Pour exécuter ce fichier, vous devez d'abord installer Node.js et la bibliothèque 'ws' :
+ * npm install ws
+ * node server.js
  */
-function sendToClient(clientId, data) {
-    const client = connectedClients.get(clientId);
-    if (client && client.readyState === WebSocket.OPEN) {
+
+const WebSocket = require('ws');
+
+// Définition du port d'écoute. IMPORTANT : Sur Render, cela sera généralement
+// défini par la variable d'environnement PORT, mais nous utilisons 8080 comme défaut local.
+const PORT = process.env.PORT || 8080;
+const wss = new WebSocket.Server({ port: PORT });
+
+// Structure pour gérer les salons et les clients connectés.
+// Format: { 'codeA': [client1, client2, ...], 'codeB': [...] }
+const activeLobbies = new Map();
+// Structure pour s'assurer que les codes de salon sont uniques.
+// Format: { 'code': { code: '12345', clients: [ws1, ws2] } }
+const codeToLobbyMap = new Map();
+
+console.log(`Serveur WebSocket démarré sur le port ${PORT}`);
+
+// --- Fonctions utilitaires ---
+
+/** Génère un code de salon unique à 5 chiffres. */
+function generateUniqueCode() {
+    let code;
+    do {
+        // Génère un nombre entre 10000 et 99999
+        code = Math.floor(10000 + Math.random() * 90000).toString();
+    } while (codeToLobbyMap.has(code));
+    return code;
+}
+
+/** Envoie un message JSON à un client spécifique. */
+function sendToClient(client, data) {
+    if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(data));
     }
 }
 
-/**
- * Diffuse un message JSON à tous les clients d'un salon de jeu.
- * @param {string} roomId L'ID du salon.
- * @param {object} data L'objet de données à envoyer.
- * @param {string} [excludeClientId=null] ID du client à exclure de la diffusion.
- */
-function broadcastToRoom(roomId, data, excludeClientId = null) {
-    const room = gameRooms.get(roomId);
-    if (room) {
-        const message = JSON.stringify(data);
-        for (const [clientId, clientState] of room.players.entries()) {
-            if (clientId !== excludeClientId) {
-                const clientWs = connectedClients.get(clientId);
-                if (clientWs && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(message);
-                }
+/** Envoie un message JSON à tous les clients d'un salon. */
+function broadcastToLobby(code, data, senderWs = null) {
+    const lobby = codeToLobbyMap.get(code);
+    if (lobby) {
+        lobby.clients.forEach(client => {
+            // Optionnel: n'envoie pas à l'expéditeur si spécifié (utile pour les confirmations)
+            if (client.readyState === WebSocket.OPEN && client !== senderWs) {
+                sendToClient(client, data);
             }
-        }
-    }
-}
-
-/**
- * Génère un identifiant unique (UUID v4 simplifié).
- * @returns {string} Un identifiant unique.
- */
-function generateId() {
-    return 'id-' + Math.random().toString(36).substring(2, 9);
-}
-
-// --- LOGIQUE DU SERVEUR DE JEU ---
-
-/**
- * Met à jour l'état du jeu côté client pour tous les joueurs du salon.
- * @param {string} roomId 
- */
-function syncRoomState(roomId) {
-    const room = gameRooms.get(roomId);
-    if (!room) return;
-
-    // Créer une liste simplifiée des joueurs pour l'envoi au client
-    const playersList = Array.from(room.players.values()).map(p => ({
-        id: p.id,
-        name: p.name,
-        color: p.color,
-        workPoints: p.workPoints,
-        burnout: p.burnout,
-        isHost: p.isHost
-    }));
-
-    broadcastToRoom(roomId, {
-        type: 'game_state_sync',
-        state: room.state,
-        hostId: room.hostId,
-        players: playersList,
-        playerCount: playersList.length
-    });
-}
-
-/**
- * Trouve le salon auquel appartient un client donné.
- * @param {string} clientId L'ID du client.
- * @returns {string | null} L'ID du salon ou null.
- */
-function findRoomIdByClient(clientId) {
-    for (const [roomId, room] of gameRooms.entries()) {
-        if (room.players.has(clientId)) {
-            return roomId;
-        }
-    }
-    return null;
-}
-
-/**
- * Gère la déconnexion d'un client.
- * @param {string} clientId L'ID du client.
- */
-function handleClientDisconnect(clientId) {
-    const roomId = findRoomIdByClient(clientId);
-
-    if (roomId) {
-        const room = gameRooms.get(roomId);
-        if (room) {
-            const wasHost = room.hostId === clientId;
-            
-            // Retirer le joueur du salon
-            room.players.delete(clientId);
-            console.log(`Client ${clientId} retiré du salon ${roomId}. Restant: ${room.players.size}`);
-
-            // Si c'était l'hôte, et qu'il reste des joueurs, attribuer un nouvel hôte
-            if (wasHost && room.players.size > 0) {
-                const newHostId = room.players.keys().next().value;
-                room.hostId = newHostId;
-                const newHostState = room.players.get(newHostId);
-                newHostState.isHost = true;
-                console.log(`Nouvel hôte attribué dans ${roomId}: ${newHostId}`);
-
-                // Si le jeu était en cours, le mettre en mode LOBBY (pour plus de simplicité, on redémarre)
-                if (room.state === GAME_STATES.IN_GAME) {
-                    room.state = GAME_STATES.LOBBY;
-                }
-            } else if (room.players.size === 0) {
-                // S'il n'y a plus de joueurs, détruire le salon
-                gameRooms.delete(roomId);
-                console.log(`Salon ${roomId} détruit car vide.`);
-                return;
-            }
-
-            // Mettre à jour l'état du jeu pour les joueurs restants
-            syncRoomState(roomId);
-            
-            // Informer les joueurs restants de la déconnexion
-            broadcastToRoom(roomId, {
-                type: 'player_left',
-                leftId: clientId
-            });
-        }
-    }
-    
-    // Finalement, retirer la connexion WS
-    connectedClients.delete(clientId);
-    console.log(`Client déconnecté et retiré: ${clientId}. Total enregistré: ${connectedClients.size}`);
-}
-
-/**
- * Gère le démarrage du jeu par l'hôte.
- * @param {string} roomId 
- */
-function handleGameStart(roomId) {
-    const room = gameRooms.get(roomId);
-    if (!room) return;
-
-    if (room.players.size < MIN_PLAYERS) {
-        // Envoie un message d'erreur à l'hôte
-        sendToClient(room.hostId, {
-            type: 'error',
-            message: `Vous devez avoir au moins ${MIN_PLAYERS} joueurs pour commencer.`
         });
-        return;
-    }
-
-    room.state = GAME_STATES.IN_GAME;
-    
-    // Réinitialiser les points de travail/burnout
-    for (const playerState of room.players.values()) {
-        playerState.workPoints = 0;
-        playerState.burnout = 0;
-    }
-
-    // Informer les clients que le jeu commence
-    broadcastToRoom(roomId, {
-        type: 'game_start'
-    });
-    syncRoomState(roomId);
-    console.log(`Jeu démarré dans le salon ${roomId}`);
-}
-
-/**
- * Gère la mise à jour des points de travail d'un joueur.
- * @param {string} clientId 
- * @param {number} newPoints 
- */
-function handleWorkPointUpdate(clientId, newPoints) {
-    const roomId = findRoomIdByClient(clientId);
-    if (!roomId) return;
-
-    const room = gameRooms.get(roomId);
-    const playerState = room.players.get(clientId);
-
-    if (room.state === GAME_STATES.IN_GAME && playerState) {
-        playerState.workPoints = newPoints;
-        syncRoomState(roomId); // Synchronise l'état pour tous les joueurs
     }
 }
 
-/**
- * Gère la mise à jour du niveau de burnout d'un joueur.
- * @param {string} clientId 
- * @param {number} newBurnout 
- */
-function handleBurnoutUpdate(clientId, newBurnout) {
-    const roomId = findRoomIdByClient(clientId);
-    if (!roomId) return;
+// --- Gestion des Connexions ---
 
-    const room = gameRooms.get(roomId);
-    const playerState = room.players.get(clientId);
+wss.on('connection', (ws) => {
+    // Attache les métadonnées spécifiques au client (l'ID du client est géré côté client pour l'instant)
+    ws.id = require('crypto').randomUUID(); // ID unique pour ce client
+    ws.lobbyCode = null;
+    ws.nickname = null;
 
-    if (room.state === GAME_STATES.IN_GAME && playerState) {
-        playerState.burnout = newBurnout;
-        
-        // Vérification de la condition de fin de jeu
-        if (newBurnout >= 100) {
-            room.state = GAME_STATES.GAME_OVER;
-            broadcastToRoom(roomId, {
-                type: 'game_over',
-                winnerId: clientId, // Le premier à atteindre 100 est le gagnant de l'épuisement professionnel (pour la blague)
-                reason: 'burnout'
-            });
-        }
-        
-        syncRoomState(roomId); // Synchronise l'état pour tous les joueurs
-    }
-}
+    console.log(`Client ${ws.id} connecté.`);
 
-// --- INITIALISATION DU SERVEUR WEBSOCKET ---
-
-const wss = new WebSocket.Server({ port: PORT });
-console.log(`Serveur de jeu centralisé démarré sur le port ${PORT}`);
-
-wss.on('connection', function connection(ws) {
-    let clientId = generateId(); // ID unique pour chaque connexion
-    connectedClients.set(clientId, ws);
-
-    console.log(`Nouveau client connecté. ID: ${clientId}. Total WS: ${wss.clients.size}`);
-    
-    // Informer le client de son ID immédiatement
-    sendToClient(clientId, {
-        type: 'client_id',
-        id: clientId
-    });
-
-    // Événement lorsqu'un message est reçu d'un client
-    ws.on('message', function incoming(message) {
+    // --- Gestion des Messages Entrants ---
+    ws.on('message', (message) => {
+        let parsedMessage;
         try {
-            const data = JSON.parse(message);
-            console.log(`Message reçu de ${clientId}: ${data.type}`);
+            parsedMessage = JSON.parse(message);
+        } catch (e) {
+            console.error("Message invalide reçu:", message.toString());
+            sendToClient(ws, { action: 'ERROR', message: 'Format de message invalide.' });
+            return;
+        }
 
-            // Le client n'a pas encore son nom (étape modale), il ne peut que créer/joindre
-            if (data.type === 'create_lobby' && data.playerName) {
-                const roomId = generateId();
-                
-                // Palette de couleurs pour les joueurs (maintenant gérée par le serveur)
-                const colors = ['color-A', 'color-B', 'color-C', 'color-D'];
-                const playerColor = colors[0];
+        const { action, code, nickname, content } = parsedMessage;
 
-                const playerState = {
-                    id: clientId,
-                    name: data.playerName,
-                    color: playerColor,
-                    workPoints: 0,
-                    burnout: 0,
-                    isHost: true,
-                    ws: ws // Pour un accès rapide si nécessaire
-                };
+        // Mise à jour du nickname si non défini ou action de connexion
+        if (nickname) {
+            ws.nickname = nickname;
+        }
 
-                const room = {
-                    roomId: roomId,
-                    hostId: clientId,
-                    state: GAME_STATES.LOBBY,
-                    players: new Map([[clientId, playerState]])
-                };
+        switch (action) {
+            case 'CREATE_LOBBY':
+                handleCreateLobby(ws, nickname);
+                break;
 
-                gameRooms.set(roomId, room);
-                console.log(`Salon créé: ${roomId} par ${clientId}`);
+            case 'JOIN_LOBBY':
+                handleJoinLobby(ws, code, nickname);
+                break;
 
-                // Informer l'hôte de l'ID du salon et de son propre état
-                sendToClient(clientId, {
-                    type: 'lobby_created',
-                    roomId: roomId
-                });
-                
-                // Synchroniser l'état initial
-                syncRoomState(roomId);
-            }
-            
-            else if (data.type === 'join_lobby' && data.roomId && data.playerName) {
-                const room = gameRooms.get(data.roomId);
+            case 'MESSAGE':
+                handleChatMessage(ws, content);
+                break;
 
-                if (!room || room.state !== GAME_STATES.LOBBY) {
-                    sendToClient(clientId, {
-                        type: 'error',
-                        message: 'Salon introuvable ou déjà en jeu.'
-                    });
-                    return;
-                }
-                
-                // Trouver une couleur non utilisée
-                const existingColors = Array.from(room.players.values()).map(p => p.color);
-                const availableColors = ['color-A', 'color-B', 'color-C', 'color-D'].filter(c => !existingColors.includes(c));
+            case 'LEAVE_LOBBY':
+                handleLeaveLobby(ws);
+                break;
 
-                if (availableColors.length === 0) {
-                    sendToClient(clientId, {
-                        type: 'error',
-                        message: 'Le salon est complet (Max 4 joueurs).'
-                    });
-                    return;
-                }
-
-                const playerState = {
-                    id: clientId,
-                    name: data.playerName,
-                    color: availableColors[0],
-                    workPoints: 0,
-                    burnout: 0,
-                    isHost: false,
-                    ws: ws
-                };
-
-                room.players.set(clientId, playerState);
-                console.log(`Client ${clientId} a rejoint le salon ${data.roomId}`);
-                
-                // Informer le client qu'il a rejoint le salon
-                sendToClient(clientId, {
-                    type: 'lobby_joined',
-                    roomId: data.roomId
-                });
-
-                // Synchroniser le nouvel état pour tous les joueurs
-                syncRoomState(data.roomId);
-            }
-
-            // --- GESTION DES ACTIONS DE JEU ---
-            
-            else if (data.type === 'game_action') {
-                const roomId = findRoomIdByClient(clientId);
-                if (!roomId) return;
-                
-                const room = gameRooms.get(roomId);
-                
-                switch (data.action) {
-                    case 'start_game':
-                        if (room.hostId === clientId) {
-                            handleGameStart(roomId);
-                        }
-                        break;
-                    case 'update_work_points':
-                        handleWorkPointUpdate(clientId, data.value);
-                        break;
-                    case 'update_burnout':
-                        handleBurnoutUpdate(clientId, data.value);
-                        break;
-                    case 'chat_message':
-                        // Diffuser le message de chat à tous les joueurs du salon
-                        broadcastToRoom(roomId, {
-                            type: 'chat_message',
-                            senderId: clientId,
-                            name: room.players.get(clientId).name,
-                            text: data.text
-                        });
-                        break;
-                    // TODO: Ajouter d'autres actions de jeu ici (cartes, événements, etc.)
-                }
-            }
-
-        } catch (error) {
-            console.error(`Erreur lors du traitement du message de ${clientId}:`, error);
+            default:
+                sendToClient(ws, { action: 'ERROR', message: 'Action non reconnue.' });
+                break;
         }
     });
 
-    // Événement lorsqu'un client se déconnecte
+    // --- Gestion de la Déconnexion ---
     ws.on('close', () => {
-        handleClientDisconnect(clientId);
+        console.log(`Client ${ws.id} déconnecté.`);
+        // Assurez-vous que le client quitte son salon lors de la déconnexion
+        if (ws.lobbyCode) {
+            handleLeaveLobby(ws, true); // Le deuxième argument indique qu'il s'agit d'une fermeture brutale
+        }
     });
 
-    // Événement d'erreur
-    ws.on('error', (err) => {
-        console.error(`Erreur WebSocket pour le client ${clientId}:`, err.message);
-        ws.close(); // Fermer la connexion en cas d'erreur
+    ws.on('error', (error) => {
+        console.error(`Erreur WebSocket pour le client ${ws.id}:`, error.message);
     });
 });
+
+// --- Gestionnaires d'Actions ---
+
+/** Gère la création d'un nouveau salon. */
+function handleCreateLobby(ws, nickname) {
+    if (!nickname) {
+        return sendToClient(ws, { action: 'ERROR', message: 'Pseudonyme requis pour créer le salon.' });
+    }
+
+    // Si le client est déjà dans un salon, le faire quitter d'abord (prévention)
+    if (ws.lobbyCode) {
+        handleLeaveLobby(ws);
+    }
+
+    const newCode = generateUniqueCode();
+    const newLobby = { code: newCode, clients: [ws] };
+    codeToLobbyMap.set(newCode, newLobby);
+
+    ws.lobbyCode = newCode;
+    ws.nickname = nickname;
+
+    sendToClient(ws, { action: 'LOBBY_CREATED', code: newCode, message: `Salon créé avec le code ${newCode}.` });
+    console.log(`Salon ${newCode} créé par ${nickname} (${ws.id}).`);
+
+    // Envoyer un message système aux membres du salon
+    broadcastToLobby(newCode, {
+        action: 'SYSTEM_MESSAGE',
+        content: `${nickname} a créé et rejoint le salon.`,
+        timestamp: Date.now()
+    }, ws); // N'envoie pas à l'expéditeur lui-même
+}
+
+/** Gère la jonction à un salon existant. */
+function handleJoinLobby(ws, code, nickname) {
+    if (!nickname || !code || code.length !== 5) {
+        return sendToClient(ws, { action: 'ERROR', message: 'Code et pseudonyme valides requis.' });
+    }
+
+    // Si le client est déjà dans un salon, le faire quitter d'abord
+    if (ws.lobbyCode) {
+        handleLeaveLobby(ws);
+    }
+
+    const lobby = codeToLobbyMap.get(code);
+
+    if (lobby) {
+        // Ajouter le client au salon
+        lobby.clients.push(ws);
+        ws.lobbyCode = code;
+        ws.nickname = nickname;
+
+        sendToClient(ws, { action: 'LOBBY_JOINED', code: code, message: `Vous avez rejoint le salon ${code}.` });
+        console.log(`${nickname} (${ws.id}) a rejoint le salon ${code}.`);
+
+        // Envoyer un message système aux autres membres du salon
+        broadcastToLobby(code, {
+            action: 'SYSTEM_MESSAGE',
+            content: `${nickname} a rejoint le salon.`,
+            timestamp: Date.now()
+        }, ws);
+    } else {
+        sendToClient(ws, { action: 'ERROR', message: `Le salon avec le code ${code} n'existe pas.` });
+    }
+}
+
+/** Gère l'envoi d'un message dans le salon. */
+function handleChatMessage(ws, content) {
+    if (!ws.lobbyCode) {
+        return sendToClient(ws, { action: 'ERROR', message: 'Vous devez être dans un salon pour envoyer des messages.' });
+    }
+    if (!content || content.trim() === '') {
+        return; // Ignorer les messages vides
+    }
+
+    const messagePayload = {
+        action: 'MESSAGE_RECEIVED',
+        senderId: ws.id, // Utilisé pour distinguer "Moi" côté client
+        senderNickname: ws.nickname,
+        content: content,
+        timestamp: Date.now()
+    };
+
+    // Envoyer le message à tous les membres du salon, y compris l'expéditeur pour confirmation
+    const lobby = codeToLobbyMap.get(ws.lobbyCode);
+    if (lobby) {
+        lobby.clients.forEach(client => {
+            sendToClient(client, messagePayload);
+        });
+    }
+
+    console.log(`[Salon ${ws.lobbyCode}] ${ws.nickname}: ${content}`);
+}
+
+/** Gère le départ d'un client d'un salon. */
+function handleLeaveLobby(ws, isDisconnect = false) {
+    const code = ws.lobbyCode;
+    const nickname = ws.nickname || 'Un utilisateur inconnu';
+
+    if (code) {
+        const lobby = codeToLobbyMap.get(code);
+        if (lobby) {
+            // Retirer le client de la liste
+            lobby.clients = lobby.clients.filter(client => client !== ws);
+            console.log(`Client ${nickname} a quitté le salon ${code}. Clients restants: ${lobby.clients.length}`);
+
+            // Envoyer un message système aux membres restants
+            broadcastToLobby(code, {
+                action: 'SYSTEM_MESSAGE',
+                content: `${nickname} a quitté le salon.`,
+                timestamp: Date.now()
+            });
+
+            // Si le salon est vide, le supprimer
+            if (lobby.clients.length === 0) {
+                codeToLobbyMap.delete(code);
+                console.log(`Salon ${code} supprimé car il est vide.`);
+            }
+
+            // Informer le client qu'il a quitté (seulement s'il ne se déconnecte pas)
+            if (!isDisconnect) {
+                sendToClient(ws, { action: 'LOBBY_LEFT' });
+            }
+        }
+        ws.lobbyCode = null;
+        ws.nickname = null;
+    }
+}
