@@ -58,9 +58,8 @@
         <div id="home-screen" class="p-6 md:p-8 flex flex-col items-center justify-center flex-grow">
             <h1 class="text-3xl font-extrabold text-blue-600 mb-6">Rejoindre ou Créer un Chat</h1>
             
-            <p class="text-xs text-gray-500 mb-4 bg-yellow-100 p-2 rounded-lg w-full text-center">
-                <span class="font-bold">ATTENTION:</span> Ce client se connecte à un serveur WebSocket. L'adresse doit être mise à jour dans le code JS.
-                Adresse actuelle (placeholder): <span id="server-address-display" class="font-mono text-gray-700">ws://localhost:8080</span>
+            <p class="text-xs text-gray-500 mb-4 bg-blue-50 p-2 rounded-lg w-full text-center font-mono">
+                Connecté au serveur: <span class="font-bold text-blue-800">https://webrtc-epuisement-professionnel.onrender.com</span>
             </p>
 
             <input id="nickname-input" type="text" placeholder="Entrez votre pseudonyme (Max 15)" maxlength="15"
@@ -152,8 +151,8 @@
     <!-- Script WebSocket -->
     <script>
         // --- Configuration du Serveur ---
-        // REMPLACER cette adresse par l'URL de votre serveur Render (en utilisant wss:// si HTTPS est utilisé)
-        const SERVER_ADDRESS = 'ws://localhost:8080';
+        // L'adresse de votre serveur Render (utilisant wss:// pour la sécurité)
+        const SERVER_ADDRESS = 'wss://webrtc-epuisement-professionnel.onrender.com';
 
         // --- Variables Globales ---
         let ws = null;
@@ -176,15 +175,11 @@
         const currentRoomCodeDisplay = document.getElementById('current-room-code');
         const currentNicknameDisplay = document.getElementById('current-nickname');
         const loadingOverlay = document.getElementById('loading-overlay');
-        const serverAddressDisplay = document.getElementById('server-address-display');
-
+        
         const confirmDialog = document.getElementById('confirmation-dialog');
         const confirmMsg = document.getElementById('confirmation-message');
         const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
         const confirmActionBtn = document.getElementById('confirm-action-btn');
-
-        // Mise à jour de l'affichage de l'adresse du serveur
-        serverAddressDisplay.textContent = SERVER_ADDRESS;
 
         // --- Fonctions utilitaires ---
 
@@ -315,7 +310,7 @@
 
             ws.onerror = (error) => {
                 console.error("Erreur WebSocket:", error);
-                alertMessage("Échec de la connexion au serveur. Assurez-vous que le serveur est démarré à l'adresse correcte.");
+                alertMessage("Échec de la connexion au serveur. Assurez-vous que le serveur est démarré à l'adresse correcte.", true);
                 hideLoading();
             };
 
@@ -324,7 +319,6 @@
                 if (currentRoomCode) {
                     // Tenter de se reconnecter après une courte pause
                     alertMessage("Connexion perdue. Tentative de reconnexion...", true);
-                    // navigate('home'); // Retour à l'écran d'accueil si la reconnexion n'est pas automatique
                 }
                 ws = null;
                 hideLoading();
@@ -365,7 +359,7 @@
                     break;
 
                 case 'ERROR':
-                    alertMessage(data.message);
+                    alertMessage(data.message, true);
                     break;
 
                 default:
