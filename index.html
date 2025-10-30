@@ -153,10 +153,16 @@
         // --- Configuration du Serveur ---
         // L'adresse de votre serveur Render (utilisant wss:// pour la sécurité)
         const SERVER_ADDRESS = 'wss://webrtc-epuisement-professionnel.onrender.com';
+        
+        // --- Clés de Stockage Local ---
+        const USER_ID_KEY = 'chatAppUserId';
+        const NICKNAME_KEY = 'chatAppNickname';
+
 
         // --- Variables Globales ---
         let ws = null;
-        let userId = crypto.randomUUID(); // Générer un ID unique pour l'utilisateur
+        // La fonction initPersistance va déterminer si l'ID doit être créé ou chargé.
+        let userId = null; 
         let currentRoomCode = null;
         let nickname = '';
 
@@ -180,6 +186,39 @@
         const confirmMsg = document.getElementById('confirmation-message');
         const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
         const confirmActionBtn = document.getElementById('confirm-action-btn');
+
+        // --- Fonctions de Persistance (NOUVEAU) ---
+
+        /** * Initialise l'ID utilisateur en le chargeant depuis localStorage 
+         * ou en en créant un nouveau si non trouvé.
+         */
+        function initPersistance() {
+            // Tenter de charger l'ID existant
+            let storedId = localStorage.getItem(USER_ID_KEY);
+            if (storedId) {
+                userId = storedId;
+            } else {
+                // Créer un nouvel ID et le stocker
+                userId = crypto.randomUUID();
+                localStorage.setItem(USER_ID_KEY, userId);
+            }
+            console.log(`Utilisateur initialisé avec ID: ${userId}`);
+            
+            // Tenter de charger le pseudonyme existant
+            let storedNickname = localStorage.getItem(NICKNAME_KEY);
+            if (storedNickname) {
+                nickname = storedNickname;
+                nicknameInput.value = nickname;
+                console.log(`Pseudonyme chargé: ${nickname}`);
+            }
+        }
+        
+        /** Sauvegarde le pseudonyme dans localStorage. */
+        function saveNickname(newNickname) {
+            localStorage.setItem(NICKNAME_KEY, newNickname);
+            nickname = newNickname;
+        }
+
 
         // --- Fonctions utilitaires ---
 
@@ -281,6 +320,10 @@
         /** Envoie un objet JSON au serveur via WebSocket. */
         function sendToServer(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
+                // IMPORTANT: Ajouter l'ID persistant à chaque envoi d'action de connexion/création
+                if (data.action === 'CREATE_LOBBY' || data.action === 'JOIN_LOBBY') {
+                    data.userId = userId; // Ajout de l'ID pour que le serveur puisse le reconnaître
+                }
                 ws.send(JSON.stringify(data));
             } else {
                 alertMessage("Connexion au serveur perdue. Veuillez actualiser.");
@@ -370,10 +413,10 @@
 
         /** Valide le pseudonyme et le code de salon */
         function validateInputs(roomCode = null) {
-            nickname = nicknameInput.value.trim();
+            const newNickname = nicknameInput.value.trim();
             clearMessage();
 
-            if (nickname.length < 2 || nickname.length > 15) {
+            if (newNickname.length < 2 || newNickname.length > 15) {
                 alertMessage("Le pseudonyme doit contenir entre 2 et 15 caractères.");
                 return false;
             }
@@ -383,6 +426,8 @@
                     return false;
                 }
             }
+            // Enregistrer le pseudonyme valide pour la persistance
+            saveNickname(newNickname);
             return true;
         }
 
@@ -392,7 +437,7 @@
             showLoading();
             sendToServer({
                 action: 'CREATE_LOBBY',
-                nickname: nickname
+                nickname: nickname // Utilise le pseudonyme mis à jour et stocké
             });
         });
 
@@ -404,7 +449,7 @@
             sendToServer({
                 action: 'JOIN_LOBBY',
                 code: code,
-                nickname: nickname
+                nickname: nickname // Utilise le pseudonyme mis à jour et stocké
             });
         });
 
@@ -446,7 +491,8 @@
         function leaveLobby() {
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
-            nickname = '';
+            // NOTE: On ne réinitialise PLUS le nickname ni l'userId ici
+            // pour conserver l'identité lors du retour à l'accueil.
             navigate('home');
             clearMessage();
         }
@@ -463,6 +509,10 @@
         });
         
         // --- Initialisation ---
+        // 1. Initialiser l'ID et le pseudonyme persistants avant l'ouverture de la connexion.
+        initPersistance(); 
+        
+        // 2. Initialiser la connexion WebSocket.
         window.onload = initWebSocket;
     </script>
 </body>
