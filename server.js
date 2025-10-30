@@ -1,26 +1,16 @@
 /**
  * Serveur WebSocket pour l'application de chat de groupe.
- *
- * Ce script utilise Node.js et la bibliothèque 'ws' pour gérer :
- * 1. La création et la jonction de salons (lobbies) via un code à 5 chiffres.
- * 2. Le routage des messages en temps réel uniquement aux membres du même salon.
- *
- * Pour exécuter ce fichier, vous devez d'abord installer Node.js et la bibliothèque 'ws' :
- * npm install ws
- * node server.js
+ * * Mise à jour pour gérer un userId persistant envoyé par le client,
+ * essentiel pour un jeu de déduction sociale où l'identité doit survivre aux reconnexions.
  */
 
 const WebSocket = require('ws');
 
-// Définition du port d'écoute. IMPORTANT : Sur Render, cela sera généralement
-// défini par la variable d'environnement PORT, mais nous utilisons 8080 comme défaut local.
+// Définition du port d'écoute.
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port: PORT });
 
 // Structure pour gérer les salons et les clients connectés.
-// Format: { 'codeA': [client1, client2, ...], 'codeB': [...] }
-const activeLobbies = new Map();
-// Structure pour s'assurer que les codes de salon sont uniques.
 // Format: { 'code': { code: '12345', clients: [ws1, ws2] } }
 const codeToLobbyMap = new Map();
 
@@ -50,7 +40,7 @@ function broadcastToLobby(code, data, senderWs = null) {
     const lobby = codeToLobbyMap.get(code);
     if (lobby) {
         lobby.clients.forEach(client => {
-            // Optionnel: n'envoie pas à l'expéditeur si spécifié (utile pour les confirmations)
+            // N'envoie pas à l'expéditeur si spécifié
             if (client.readyState === WebSocket.OPEN && client !== senderWs) {
                 sendToClient(client, data);
             }
@@ -61,12 +51,13 @@ function broadcastToLobby(code, data, senderWs = null) {
 // --- Gestion des Connexions ---
 
 wss.on('connection', (ws) => {
-    // Attache les métadonnées spécifiques au client (l'ID du client est géré côté client pour l'instant)
-    ws.id = require('crypto').randomUUID(); // ID unique pour ce client
+    // Initialise les métadonnées. L'ID sera attribué lors de CREATE/JOIN.
+    // L'ID du client vient maintenant du localStorage côté client.
+    ws.id = null; 
     ws.lobbyCode = null;
     ws.nickname = null;
 
-    console.log(`Client ${ws.id} connecté.`);
+    console.log(`Nouvelle connexion WebSocket établie.`);
 
     // --- Gestion des Messages Entrants ---
     ws.on('message', (message) => {
@@ -79,20 +70,32 @@ wss.on('connection', (ws) => {
             return;
         }
 
-        const { action, code, nickname, content } = parsedMessage;
+        // Récupère userId envoyé par le client
+        const { action, code, nickname, content, userId } = parsedMessage; 
 
-        // Mise à jour du nickname si non défini ou action de connexion
+        // Attribue l'ID et le nickname si fournis lors de la création/jonction
+        if (userId) {
+            ws.id = userId;
+        }
         if (nickname) {
             ws.nickname = nickname;
         }
+        
+        // Sécurité de base: Si le client tente d'agir sans ID après la connexion, refuser.
+        if (action !== 'CREATE_LOBBY' && action !== 'JOIN_LOBBY' && !ws.id) {
+             return sendToClient(ws, { action: 'ERROR', message: 'Identifiant utilisateur manquant. Veuillez vous reconnecter.' });
+        }
+
 
         switch (action) {
             case 'CREATE_LOBBY':
-                handleCreateLobby(ws, nickname);
+                // On passe les données pour validation et traitement
+                handleCreateLobby(ws, nickname, userId); 
                 break;
 
             case 'JOIN_LOBBY':
-                handleJoinLobby(ws, code, nickname);
+                // On passe les données pour validation et traitement
+                handleJoinLobby(ws, code, nickname, userId); 
                 break;
 
             case 'MESSAGE':
@@ -114,7 +117,8 @@ wss.on('connection', (ws) => {
         console.log(`Client ${ws.id} déconnecté.`);
         // Assurez-vous que le client quitte son salon lors de la déconnexion
         if (ws.lobbyCode) {
-            handleLeaveLobby(ws, true); // Le deuxième argument indique qu'il s'agit d'une fermeture brutale
+            // isDisconnect = true pour éviter d'envoyer LOBBY_LEFT au client qui se ferme
+            handleLeaveLobby(ws, true); 
         }
     });
 
@@ -126,9 +130,9 @@ wss.on('connection', (ws) => {
 // --- Gestionnaires d'Actions ---
 
 /** Gère la création d'un nouveau salon. */
-function handleCreateLobby(ws, nickname) {
-    if (!nickname) {
-        return sendToClient(ws, { action: 'ERROR', message: 'Pseudonyme requis pour créer le salon.' });
+function handleCreateLobby(ws, nickname, userId) {
+    if (!nickname || !userId) {
+        return sendToClient(ws, { action: 'ERROR', message: 'Pseudonyme et ID utilisateur requis.' });
     }
 
     // Si le client est déjà dans un salon, le faire quitter d'abord (prévention)
@@ -137,11 +141,11 @@ function handleCreateLobby(ws, nickname) {
     }
 
     const newCode = generateUniqueCode();
+    // Stocker le client dans le salon
     const newLobby = { code: newCode, clients: [ws] };
     codeToLobbyMap.set(newCode, newLobby);
 
     ws.lobbyCode = newCode;
-    ws.nickname = nickname;
 
     sendToClient(ws, { action: 'LOBBY_CREATED', code: newCode, message: `Salon créé avec le code ${newCode}.` });
     console.log(`Salon ${newCode} créé par ${nickname} (${ws.id}).`);
@@ -155,9 +159,9 @@ function handleCreateLobby(ws, nickname) {
 }
 
 /** Gère la jonction à un salon existant. */
-function handleJoinLobby(ws, code, nickname) {
-    if (!nickname || !code || code.length !== 5) {
-        return sendToClient(ws, { action: 'ERROR', message: 'Code et pseudonyme valides requis.' });
+function handleJoinLobby(ws, code, nickname, userId) {
+    if (!nickname || !code || code.length !== 5 || !userId) {
+        return sendToClient(ws, { action: 'ERROR', message: 'Code, ID et pseudonyme valides requis.' });
     }
 
     // Si le client est déjà dans un salon, le faire quitter d'abord
@@ -168,10 +172,13 @@ function handleJoinLobby(ws, code, nickname) {
     const lobby = codeToLobbyMap.get(code);
 
     if (lobby) {
-        // Ajouter le client au salon
+        // Retrait de la connexion précédente du même ID si elle existe (ex: reconnexion rapide)
+        // Cela garantit qu'il n'y a qu'une seule connexion active par ID par salon.
+        lobby.clients = lobby.clients.filter(client => client.id !== userId);
+
+        // Ajouter la nouvelle connexion au salon
         lobby.clients.push(ws);
         ws.lobbyCode = code;
-        ws.nickname = nickname;
 
         sendToClient(ws, { action: 'LOBBY_JOINED', code: code, message: `Vous avez rejoint le salon ${code}.` });
         console.log(`${nickname} (${ws.id}) a rejoint le salon ${code}.`);
@@ -198,7 +205,7 @@ function handleChatMessage(ws, content) {
 
     const messagePayload = {
         action: 'MESSAGE_RECEIVED',
-        senderId: ws.id, // Utilisé pour distinguer "Moi" côté client
+        senderId: ws.id, // ID persistant
         senderNickname: ws.nickname,
         content: content,
         timestamp: Date.now()
@@ -219,13 +226,15 @@ function handleChatMessage(ws, content) {
 function handleLeaveLobby(ws, isDisconnect = false) {
     const code = ws.lobbyCode;
     const nickname = ws.nickname || 'Un utilisateur inconnu';
+    const userId = ws.id || 'ID inconnu';
 
     if (code) {
         const lobby = codeToLobbyMap.get(code);
         if (lobby) {
-            // Retirer le client de la liste
-            lobby.clients = lobby.clients.filter(client => client !== ws);
-            console.log(`Client ${nickname} a quitté le salon ${code}. Clients restants: ${lobby.clients.length}`);
+            // Retirer le client de la liste en utilisant son ID persistant
+            lobby.clients = lobby.clients.filter(client => client.id !== userId);
+            
+            console.log(`Client ${nickname} (${userId}) a quitté le salon ${code}. Clients restants: ${lobby.clients.length}`);
 
             // Envoyer un message système aux membres restants
             broadcastToLobby(code, {
