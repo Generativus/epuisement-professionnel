@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chat de Groupe - Lobby WebSocket</title>
+    <title>Jeu de Déduction Sociale - Lobby WebSocket</title>
     <!-- Chargement de Tailwind CSS pour un style moderne et réactif -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -56,7 +56,7 @@
 
         <!-- Écran de Connexion (Home) -->
         <div id="home-screen" class="p-6 md:p-8 flex flex-col items-center justify-center flex-grow">
-            <h1 class="text-3xl font-extrabold text-blue-600 mb-6">Rejoindre ou Créer un Chat</h1>
+            <h1 class="text-3xl font-extrabold text-blue-600 mb-6">Rejoindre ou Créer un Salon de Jeu</h1>
             
             <p class="text-xs text-gray-500 mb-4 bg-blue-50 p-2 rounded-lg w-full text-center font-mono">
                 Connecté au serveur: <span class="font-bold text-blue-800">https://webrtc-epuisement-professionnel.onrender.com</span>
@@ -68,7 +68,7 @@
             <!-- Bloc de création de salon -->
             <button id="create-lobby-btn"
                     class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md transform hover:scale-[1.01]">
-                Créer un nouveau salon (Code à 5 chiffres)
+                Créer un nouveau salon (Vous serez l'hôte)
             </button>
 
             <div class="my-6 w-full flex items-center">
@@ -89,20 +89,38 @@
             <p id="error-message" class="mt-4 text-red-500 text-sm font-medium hidden"></p>
         </div>
 
-        <!-- Écran de Chat (Lobby) -->
+        <!-- Écran de Chat (Lobby/Jeu) -->
         <div id="chat-screen" class="hidden flex-col flex-grow">
-            <!-- Entête du chat -->
-            <header class="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between shadow-sm">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-800 flex items-center">
-                        Salon: <span id="current-room-code" class="ml-2 bg-blue-100 text-blue-800 text-sm font-mono tracking-widest px-3 py-1 rounded-full"></span>
-                    </h2>
-                    <p class="text-sm text-gray-500">Connecté en tant que: <span id="current-nickname" class="font-medium"></span></p>
+            
+            <!-- NOUVEAU: Barre de menu du jeu/lobby -->
+            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg">
+                <div class="flex items-center space-x-4 mb-2 sm:mb-0 w-full sm:w-auto justify-between">
+                    <h2 class="text-lg font-bold">Salon <span id="current-room-code" class="ml-1 bg-blue-600 text-white text-sm font-mono tracking-widest px-2 py-0.5 rounded"></span></h2>
+                    
+                    <p id="player-count-display" class="text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-1 text-green-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
+                        <span id="player-count">1</span> / <span id="max-players">?</span> Joueurs
+                    </p>
                 </div>
-                <button id="leave-lobby-btn" class="text-red-500 hover:text-red-700 transition duration-150 p-2 rounded-full hover:bg-red-100 text-sm font-medium">
-                    Quitter
-                </button>
+
+                <div class="flex items-center space-x-3 mt-2 sm:mt-0">
+                    <button id="start-game-btn"
+                            class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 shadow-md flex-shrink-0 disabled:bg-red-900 disabled:opacity-50 hidden">
+                        Démarrer le Jeu
+                    </button>
+                    <button id="leave-lobby-btn" class="text-white hover:text-red-300 transition duration-150 p-1 rounded-full text-sm font-medium border border-white">
+                        Quitter
+                    </button>
+                </div>
             </header>
+
+            <!-- NOUVEAU: Affichage de l'état du jeu et du timer -->
+            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 hidden">
+                <p id="game-status-text">
+                    <span id="timer-display" class="text-xl text-red-600 font-extrabold font-mono">15:00</span> - Débat en cours
+                </p>
+            </div>
+
 
             <!-- Zone d'affichage des messages -->
             <div id="messages-container" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar bg-white">
@@ -151,20 +169,25 @@
     <!-- Script WebSocket -->
     <script>
         // --- Configuration du Serveur ---
-        // L'adresse de votre serveur Render (utilisant wss:// pour la sécurité)
         const SERVER_ADDRESS = 'wss://webrtc-epuisement-professionnel.onrender.com';
         
         // --- Clés de Stockage Local ---
         const USER_ID_KEY = 'chatAppUserId';
         const NICKNAME_KEY = 'chatAppNickname';
 
-
+        // --- Constantes de Jeu ---
+        const MIN_PLAYERS = 4;
+        const GAME_DURATION_SECONDS = 900; // 15 minutes
+        
         // --- Variables Globales ---
         let ws = null;
-        // La fonction initPersistance va déterminer si l'ID doit être créé ou chargé.
         let userId = null; 
         let currentRoomCode = null;
         let nickname = '';
+        let lobbyData = {}; // Stocke les données du lobby (hostId, playerCount, gameStatus, etc.)
+        let gameTimerInterval = null;
+        let remainingTime = GAME_DURATION_SECONDS;
+
 
         // --- Références DOM ---
         const homeScreen = document.getElementById('home-screen');
@@ -186,34 +209,32 @@
         const confirmMsg = document.getElementById('confirmation-message');
         const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
         const confirmActionBtn = document.getElementById('confirm-action-btn');
+        
+        // NOUVEAUX ÉLÉMENTS DOM
+        const startGameBtn = document.getElementById('start-game-btn');
+        const playerCountDisplay = document.getElementById('player-count');
+        const gameStatusBar = document.getElementById('game-status-bar');
+        const timerDisplay = document.getElementById('timer-display');
 
-        // --- Fonctions de Persistance (NOUVEAU) ---
 
-        /** * Initialise l'ID utilisateur en le chargeant depuis localStorage 
-         * ou en en créant un nouveau si non trouvé.
-         */
+        // --- Fonctions de Persistance ---
+
         function initPersistance() {
-            // Tenter de charger l'ID existant
             let storedId = localStorage.getItem(USER_ID_KEY);
             if (storedId) {
                 userId = storedId;
             } else {
-                // Créer un nouvel ID et le stocker
                 userId = crypto.randomUUID();
                 localStorage.setItem(USER_ID_KEY, userId);
             }
-            console.log(`Utilisateur initialisé avec ID: ${userId}`);
             
-            // Tenter de charger le pseudonyme existant
             let storedNickname = localStorage.getItem(NICKNAME_KEY);
             if (storedNickname) {
                 nickname = storedNickname;
                 nicknameInput.value = nickname;
-                console.log(`Pseudonyme chargé: ${nickname}`);
             }
         }
         
-        /** Sauvegarde le pseudonyme dans localStorage. */
         function saveNickname(newNickname) {
             localStorage.setItem(NICKNAME_KEY, newNickname);
             nickname = newNickname;
@@ -248,13 +269,12 @@
                 homeScreen.classList.remove('hidden');
             } else if (screen === 'chat') {
                 chatScreen.classList.remove('hidden');
-                // Assurez-vous que le conteneur est prêt pour le défilement
                 setTimeout(() => messagesContainer.scrollTop = messagesContainer.scrollHeight, 100);
             }
         }
 
-        /** Affiche un message dans le conteneur de chat. */
         function displayMessage({ senderId, senderNickname, content, timestamp, isSystem = false }) {
+            // ... (logique d'affichage des messages inchangée) ...
             const messageDiv = document.createElement('div');
 
             if (isSystem) {
@@ -287,10 +307,46 @@
             }
 
             messagesContainer.appendChild(messageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight; // Scroll vers le bas
+            messagesContainer.scrollTop = messagesContainer.scrollHeight; 
         }
         
-        // --- Gestion de la Confirmation ---
+        // --- Gestion du Timer de Jeu ---
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function startTimer() {
+            // Arrêter tout timer précédent
+            clearInterval(gameTimerInterval);
+            remainingTime = GAME_DURATION_SECONDS; // Réinitialiser à 15 minutes
+            timerDisplay.textContent = formatTime(remainingTime);
+            
+            gameTimerInterval = setInterval(() => {
+                remainingTime--;
+                timerDisplay.textContent = formatTime(remainingTime);
+                
+                if (remainingTime <= 0) {
+                    clearInterval(gameTimerInterval);
+                    // TODO: Gérer la fin du jeu (vote forcé, etc.)
+                    displayMessage({
+                        content: "FIN DU TEMPS ! Le jeu est terminé.",
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(gameTimerInterval);
+            remainingTime = GAME_DURATION_SECONDS; // Réinitialiser pour le prochain jeu
+        }
+
+
+        // --- Gestion de la Confirmation (inchangée) ---
         let pendingAction = null;
         
         function showConfirmation(message, action) {
@@ -317,12 +373,10 @@
 
         // --- Logique WebSocket ---
 
-        /** Envoie un objet JSON au serveur via WebSocket. */
         function sendToServer(data) {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                // IMPORTANT: Ajouter l'ID persistant à chaque envoi d'action de connexion/création
                 if (data.action === 'CREATE_LOBBY' || data.action === 'JOIN_LOBBY') {
-                    data.userId = userId; // Ajout de l'ID pour que le serveur puisse le reconnaître
+                    data.userId = userId;
                 }
                 ws.send(JSON.stringify(data));
             } else {
@@ -331,7 +385,6 @@
             }
         }
 
-        /** Initialise la connexion WebSocket. */
         function initWebSocket() {
             if (ws && ws.readyState === WebSocket.OPEN) return;
 
@@ -342,7 +395,6 @@
                 console.log("Connecté au serveur WebSocket.");
                 hideLoading();
                 clearMessage();
-                // Si l'utilisateur a un code de salon stocké, il pourrait essayer de se reconnecter ici
             };
 
             ws.onmessage = (event) => {
@@ -360,15 +412,57 @@
             ws.onclose = () => {
                 console.log("Déconnexion du serveur WebSocket.");
                 if (currentRoomCode) {
-                    // Tenter de se reconnecter après une courte pause
                     alertMessage("Connexion perdue. Tentative de reconnexion...", true);
                 }
                 ws = null;
                 hideLoading();
+                stopTimer(); // Arrêter le timer en cas de déconnexion
             };
         }
 
-        /** Traite les messages reçus du serveur. */
+        /** NOUVEAU: Met à jour l'interface du lobby avec les données du serveur */
+        function updateLobbyUI(data) {
+            lobbyData = data; // Stocker les données du lobby
+
+            const isHost = userId === data.hostId;
+            const isGameReady = data.playerCount >= MIN_PLAYERS;
+            const isGameStarted = data.gameStatus === 'STARTED';
+            
+            // Mise à jour du compteur de joueurs
+            playerCountDisplay.textContent = data.playerCount;
+            document.getElementById('max-players').textContent = data.maxPlayers; // maxPlayers est défini à 10 dans le serveur
+            
+            // Affichage du bouton Démarrer
+            startGameBtn.classList.toggle('hidden', !isHost || isGameStarted);
+            startGameBtn.disabled = !isGameReady;
+            
+            // Mise à jour du style du bouton Démarrer (visuel)
+            if (isHost) {
+                startGameBtn.textContent = isGameReady ? 'Démarrer le Jeu' : `Min ${MIN_PLAYERS} joueurs requis`;
+            }
+
+            // Gestion de l'état du jeu
+            gameStatusBar.classList.toggle('hidden', !isGameStarted);
+            messageInput.disabled = isGameStarted ? false : true; // Désactiver l'input s'il n'y a pas de jeu ou si le jeu est en pause.
+
+            if (isGameStarted) {
+                // Si le jeu vient de commencer et que nous n'avons pas de timer
+                if (!gameTimerInterval) {
+                    messagesContainer.innerHTML = ''; // Effacer le chat au démarrage
+                    displayMessage({
+                        content: `LE JEU COMMENCE ! Vous avez 15 minutes.`,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                    startTimer();
+                }
+            } else {
+                 // Si le jeu est arrêté ou en attente
+                 stopTimer();
+            }
+        }
+
+
         function handleServerMessage(data) {
             switch (data.action) {
                 case 'LOBBY_CREATED':
@@ -376,12 +470,26 @@
                     currentRoomCode = data.code;
                     enterLobby(data.code);
                     alertMessage(data.message, false);
+                    updateLobbyUI(data.lobby); // Mise à jour initiale
+                    break;
+                
+                case 'LOBBY_UPDATE':
+                    // NOUVEAU: Réception des données du lobby en temps réel
+                    updateLobbyUI(data.lobby);
                     break;
                     
                 case 'LOBBY_LEFT':
-                    // Le serveur confirme que l'utilisateur a quitté
                     leaveLobby();
                     alertMessage("Vous avez quitté le salon avec succès.", false);
+                    break;
+                
+                case 'GAME_STARTED':
+                    displayMessage({
+                        content: "L'hôte a lancé le jeu !",
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                    // Le LOBBY_UPDATE suivant confirmera le statut et lancera le timer
                     break;
 
                 case 'MESSAGE_RECEIVED':
@@ -396,7 +504,7 @@
                 case 'SYSTEM_MESSAGE':
                     displayMessage({
                         content: data.content,
-                        timestamp: data.timestamp,
+                        timestamp: Date.now(), // Utiliser l'heure actuelle si non fournie (sécurité)
                         isSystem: true
                     });
                     break;
@@ -411,7 +519,6 @@
             }
         }
 
-        /** Valide le pseudonyme et le code de salon */
         function validateInputs(roomCode = null) {
             const newNickname = nicknameInput.value.trim();
             clearMessage();
@@ -426,22 +533,19 @@
                     return false;
                 }
             }
-            // Enregistrer le pseudonyme valide pour la persistance
             saveNickname(newNickname);
             return true;
         }
 
-        /** Tente de créer un nouveau salon via le serveur. */
         createLobbyBtn.addEventListener('click', () => {
             if (!validateInputs()) return;
             showLoading();
             sendToServer({
                 action: 'CREATE_LOBBY',
-                nickname: nickname // Utilise le pseudonyme mis à jour et stocké
+                nickname: nickname
             });
         });
 
-        /** Tente de rejoindre un salon existant via le serveur. */
         joinLobbyBtn.addEventListener('click', () => {
             const code = joinCodeInput.value.trim();
             if (!validateInputs(code)) return;
@@ -449,50 +553,64 @@
             sendToServer({
                 action: 'JOIN_LOBBY',
                 code: code,
-                nickname: nickname // Utilise le pseudonyme mis à jour et stocké
+                nickname: nickname
             });
         });
+        
+        // NOUVEAU: Événement pour démarrer le jeu
+        startGameBtn.addEventListener('click', () => {
+            if (userId === lobbyData.hostId && lobbyData.playerCount >= MIN_PLAYERS) {
+                 showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Le chat sera effacé et le timer commencera.", () => {
+                    sendToServer({
+                        action: 'START_GAME'
+                    });
+                 });
+            } else if (userId !== lobbyData.hostId) {
+                alertMessage("Seul l'hôte (le créateur du salon) peut démarrer le jeu.", true);
+            } else {
+                 alertMessage(`Il faut au moins ${MIN_PLAYERS} joueurs pour commencer.`, true);
+            }
+        });
 
-        /** Finaliser l'entrée dans le salon (côté client). */
+
         function enterLobby(code) {
             currentRoomCodeDisplay.textContent = code;
             currentNicknameDisplay.textContent = nickname;
-            messagesContainer.innerHTML = ''; // Nettoyer les messages
+            messagesContainer.innerHTML = '';
             joinCodeInput.value = '';
             navigate('chat');
         }
 
-        /** Envoi d'un nouveau message au serveur. */
         function sendMessage() {
             const content = messageInput.value.trim();
             if (content === "" || !currentRoomCode) return;
+            
+            // Ne pas permettre d'envoyer si le jeu n'est pas démarré (peut être ajusté plus tard)
+            if (lobbyData.gameStatus !== 'STARTED') {
+                 return alertMessage("Le jeu n'a pas encore commencé. Attendez l'hôte.", true);
+            }
 
-            // Envoyer l'action MESSAGE au serveur
             sendToServer({
                 action: 'MESSAGE',
                 content: content
             });
 
-            messageInput.value = ''; // Effacer l'entrée
+            messageInput.value = '';
         }
         
-        /** Quitter le salon (déclenché par le bouton). */
         leaveLobbyBtn.addEventListener('click', () => {
             showConfirmation("Êtes-vous sûr de vouloir quitter le salon ? La déconnexion est immédiate.", () => {
-                // Envoyer l'action LEAVE_LOBBY au serveur
                 sendToServer({
                     action: 'LEAVE_LOBBY'
                 });
-                // Le serveur répondra avec LOBBY_LEFT et déclenchera leaveLobby()
             });
         });
         
-        /** Nettoie l'écran de chat et retourne à l'écran d'accueil. */
         function leaveLobby() {
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
-            // NOTE: On ne réinitialise PLUS le nickname ni l'userId ici
-            // pour conserver l'identité lors du retour à l'accueil.
+            lobbyData = {};
+            stopTimer(); // Arrêter le timer
             navigate('home');
             clearMessage();
         }
@@ -509,10 +627,7 @@
         });
         
         // --- Initialisation ---
-        // 1. Initialiser l'ID et le pseudonyme persistants avant l'ouverture de la connexion.
         initPersistance(); 
-        
-        // 2. Initialiser la connexion WebSocket.
         window.onload = initWebSocket;
     </script>
 </body>
