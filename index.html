@@ -29,250 +29,168 @@
             width: 100%;
             max-width: 6xl; /* Taille maximale pour desktop */
             margin: 0;
-            border-radius: 0; 
-            display: flex;
-            flex-direction: column; /* Organiser les éléments verticalement */
-            overflow: hidden; /* Important pour les conteneurs scrollables */
-            background-color: #1f2937; /* Gris foncé pour le fond */
+            border-radius: 0;
+            overflow-y: auto; /* Permet le défilement si le contenu dépasse */
         }
         
-        /* Conteneur principal du jeu/lobby */
-        #game-area {
-            display: flex;
-            flex-grow: 1; /* Prend l'espace restant */
-            overflow: hidden; /* Contient les éléments scrollables */
-            padding: 1rem;
-            gap: 1rem;
-        }
-        
-        /* Conteneur de la liste des joueurs et des infos */
-        #sidebar {
-            width: 300px;
-            min-width: 300px; /* Taille fixe sur desktop */
-            background-color: #374151; /* Gris moyen */
-            padding: 1rem;
-            border-radius: 0.75rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            overflow-y: auto;
-        }
-        
-        /* Conteneur du chat */
-        #chat-container {
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-            background-color: #374151; /* Gris moyen */
-            padding: 1rem;
-            border-radius: 0.75rem;
-            overflow: hidden;
-        }
-
-        /* Conteneur des messages (la seule partie scrollable du chat) */
+        /* Conteneur de messages pour forcer le défilement vers le bas */
         #messages-container {
-            flex-grow: 1;
             overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            padding-right: 0.5rem; /* Espace pour la scrollbar */
-        }
-        
-        /* Conteneur de la zone de saisie du chat */
-        #chat-input-area {
-            padding-top: 1rem;
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        /* Responsive pour mobile */
-        @media (max-width: 768px) {
-            #game-area {
-                flex-direction: column; /* Empiler les éléments verticalement sur mobile */
-                padding: 0.5rem;
-                gap: 0.5rem;
-            }
-            #sidebar {
-                width: 100%; /* Prend toute la largeur */
-                min-width: 100%;
-                max-height: 200px; /* Limite la hauteur de la barre latérale sur mobile */
-                overflow-y: scroll;
-            }
-            #app-container {
-                /* S'assurer que le flex fonctionne correctement pour la hauteur */
-                min-height: 100vh;
-            }
+            /* Définit une hauteur max pour que le chat scroll */
+            max-height: calc(100vh - 300px); 
+            min-height: 200px;
         }
     </style>
 </head>
-<body class="bg-gray-800 text-white">
-    <div id="app-container">
+<body class="bg-gray-50 text-gray-800">
+    <div id="app-container" class="bg-white shadow-xl flex flex-col p-4 sm:p-8">
         
-        <!-- Vue HOME/LOBBY CREATION -->
-        <div id="home-view" class="p-8 w-full max-w-lg mx-auto bg-gray-700 rounded-xl shadow-2xl transition-all duration-300">
-            <h1 class="text-3xl font-bold text-center mb-6 text-indigo-400">Jeu de Déduction Sociale</h1>
-            
+        <!-- Vue Accueil/Connexion -->
+        <section id="home-view" class="space-y-6 max-w-md mx-auto w-full">
+            <h1 class="text-4xl font-extrabold text-indigo-700 text-center">Jeu Social</h1>
+            <p class="text-center text-gray-600">Connectez-vous pour jouer.</p>
+
             <div class="space-y-4">
-                <input id="nickname-input-home" type="text" placeholder="Votre Pseudonyme" class="w-full p-3 rounded-lg bg-gray-600 border border-gray-500 placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500" maxlength="15">
-                
-                <button id="create-lobby-btn" class="w-full p-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-semibold shadow-md transition duration-200">
+                <input type="text" id="nickname-input" placeholder="Votre Surnom (min 3 lettres)" maxlength="15"
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                <input type="text" id="code-input" placeholder="Code du Salon (ex: 12345)" maxlength="5"
+                       class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 uppercase">
+            </div>
+
+            <div class="flex flex-col space-y-3">
+                <button id="join-btn" disabled
+                        class="w-full p-3 bg-indigo-500 text-white font-semibold rounded-lg shadow hover:bg-indigo-600 transition duration-150 disabled:bg-indigo-300">
+                    Rejoindre un Salon
+                </button>
+                <button id="create-btn" disabled
+                        class="w-full p-3 bg-green-500 text-white font-semibold rounded-lg shadow hover:bg-green-600 transition duration-150 disabled:bg-green-300">
                     Créer un Salon
                 </button>
-                
-                <div class="flex items-center space-x-2">
-                    <input id="code-input" type="text" placeholder="Code du Salon (5 chiffres)" class="flex-grow p-3 rounded-lg bg-gray-600 border border-gray-500 placeholder-gray-400 focus:ring-pink-500 focus:border-pink-500" maxlength="5">
-                    <button id="join-lobby-btn" class="p-3 bg-pink-600 hover:bg-pink-700 rounded-lg font-semibold shadow-md transition duration-200">
-                        Rejoindre
-                    </button>
-                </div>
             </div>
-            <p id="error-message-home" class="text-red-400 mt-4 text-center hidden"></p>
-        </div>
 
-        <!-- Vue LOBBY/GAME -->
-        <div id="lobby-view" class="hidden w-full h-full flex flex-col">
-            
-            <header class="p-3 bg-gray-900 shadow-lg flex justify-between items-center z-10">
-                <div class="flex flex-col">
-                    <h2 class="text-xl font-bold">Salon: <span id="lobby-code-display" class="text-indigo-400"></span></h2>
-                    <p id="game-status-display" class="text-sm font-medium"></p>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <button id="start-game-btn" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold shadow-md transition duration-200 hidden">
-                        Démarrer le Jeu
-                    </button>
-                    <button id="start-next-round-btn" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 rounded-lg font-semibold shadow-md transition duration-200 hidden">
-                        Manche Suivante
-                    </button>
-                    <button id="leave-lobby-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold shadow-md transition duration-200">
+            <div id="system-feedback" class="text-center text-sm text-red-500 min-h-[1.5rem]"></div>
+        </section>
+
+        <!-- Vue Lobby -->
+        <section id="lobby-view" class="hidden flex-1 flex flex-col">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-gray-200">
+                <h2 class="text-2xl font-bold text-gray-700">Salon: <span id="lobby-code-display" class="text-indigo-600"></span></h2>
+                <div class="flex items-center space-x-2">
+                    <span id="host-badge" class="hidden bg-yellow-100 text-yellow-800 text-xs font-medium px-2.5 py-0.5 rounded-full">Hôte</span>
+                    <button id="leave-lobby-btn" class="text-sm text-gray-500 hover:text-red-600 transition duration-150">
                         Quitter
                     </button>
                 </div>
-            </header>
-
-            <div id="game-area">
-                
-                <!-- SIDEBAR: Infos joueur & Liste des joueurs -->
-                <div id="sidebar">
-                    <div id="player-info" class="p-4 bg-gray-600 rounded-lg shadow-inner">
-                        <p class="font-bold text-lg text-indigo-300">Vous:</p>
-                        <p id="my-nickname"></p>
-                        <p id="my-role" class="text-sm font-medium italic"></p>
-                        <p id="my-energy" class="mt-2 text-yellow-400 font-bold text-xl">Énergie: 5</p>
-                        <p id="my-score" class="text-sm text-gray-300">Score: 0</p>
-                    </div>
-
-                    <div id="players-list-container" class="flex-grow">
-                        <h3 class="text-xl font-semibold mb-3 border-b border-gray-500 pb-1">Joueurs (<span id="player-count">0</span>)</h3>
-                        <ul id="players-list" class="space-y-2">
-                            <!-- Liste des joueurs ici -->
-                        </ul>
-                    </div>
-                    
-                    <!-- Espace pour les actions de jeu (Travail d'équipe, etc.) -->
-                    <div id="game-actions" class="mt-4 p-4 bg-gray-600 rounded-lg shadow-inner hidden">
-                        <h3 class="text-lg font-semibold mb-2">Actions</h3>
-                        <p class="text-sm text-gray-400 mb-2">Choisissez un joueur pour proposer une collaboration.</p>
-                        <select id="teamwork-target-select" class="w-full p-2 rounded-lg bg-gray-700 text-white border border-gray-600">
-                            <!-- Options des joueurs ici -->
-                        </select>
-                        <button id="request-teamwork-btn" class="w-full mt-3 p-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition duration-200" disabled>
-                            Demander Travail d'équipe
-                        </button>
-                    </div>
-                </div>
-
-                <!-- CHAT ZONE -->
-                <div id="chat-container">
-                    <h3 class="text-xl font-semibold mb-3 border-b border-gray-500 pb-1">Chat</h3>
-                    <div id="messages-container" class="mb-4">
-                        <!-- Les messages s'affichent ici -->
-                    </div>
-                    
-                    <div id="chat-input-area">
-                        <input id="message-input" type="text" placeholder="Écrivez un message (coût: 1 énergie)" class="flex-grow p-3 rounded-lg bg-gray-700 border border-gray-600 placeholder-gray-400 focus:ring-indigo-500 focus:border-indigo-500" disabled>
-                        <button id="send-message-btn" class="px-4 py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-semibold shadow-md transition duration-200" disabled>
-                            Envoyer
-                        </button>
-                    </div>
-                </div>
-
             </div>
-        </div>
+            
+            <!-- Informations Lobby & Joueurs -->
+            <div class="mb-4 bg-gray-50 p-4 rounded-lg shadow-inner">
+                <p class="text-lg font-semibold text-gray-700 mb-2">Joueurs (<span id="player-count">0</span>):</p>
+                <ul id="players-list" class="space-y-1 text-gray-600 text-sm">
+                    <!-- Les joueurs seront listés ici -->
+                </ul>
+            </div>
+            
+            <!-- Bouton Démarrer Jeu (visible uniquement par l'hôte) -->
+            <button id="start-game-btn" disabled
+                    class="w-full p-3 bg-red-600 text-white font-semibold rounded-lg shadow hover:bg-red-700 transition duration-150 disabled:bg-red-300 mb-4 hidden">
+                Démarrer le Jeu (Min 4 joueurs)
+            </button>
+            
+            <!-- Affichage du Chat -->
+            <div id="messages-container" class="flex-1 bg-gray-100 p-4 rounded-lg space-y-2 overflow-y-auto mb-4">
+                <!-- Messages de chat ici -->
+            </div>
+            
+            <!-- Affichage de l'Énergie et de la Saisie de Message -->
+            <div id="chat-controls" class="pt-4 border-t border-gray-200">
+                <div class="flex items-center mb-2 space-x-4">
+                    <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Énergie:</label>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="energy-bar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width: 100%;"></div>
+                    </div>
+                </div>
+                <div class="flex space-x-3">
+                    <input type="text" id="message-input" placeholder="Taper un message..." maxlength="100"
+                           class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    <button id="send-message-btn" disabled
+                            class="p-3 bg-indigo-500 text-white font-semibold rounded-lg shadow hover:bg-indigo-600 transition duration-150 disabled:bg-indigo-300">
+                        Envoyer
+                    </button>
+                </div>
+            </div>
+        </section>
 
-        <!-- MODAL de Confirmation/Erreur -->
-        <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
-            <div id="modal-content" class="bg-gray-700 p-6 rounded-xl shadow-3xl max-w-sm w-full">
-                <h3 id="modal-title" class="text-xl font-bold mb-3 text-red-400">Erreur</h3>
-                <p id="modal-text" class="mb-4">Message d'erreur par défaut.</p>
-                <div id="modal-buttons" class="flex justify-end space-x-3">
-                    <button id="modal-cancel-btn" class="px-4 py-2 bg-gray-500 hover:bg-gray-600 rounded-lg font-semibold transition duration-200 hidden">Annuler</button>
-                    <button id="modal-confirm-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition duration-200">OK</button>
+        <!-- Modal de Confirmation (pour le 'Quitter' ou autres actions critiques) -->
+        <div id="confirmation-modal" class="fixed inset-0 bg-gray-900 bg-opacity-75 z-50 hidden items-center justify-center p-4">
+            <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full space-y-4">
+                <p id="confirmation-message" class="text-gray-700 text-lg font-medium"></p>
+                <div class="flex justify-end space-x-3">
+                    <button id="cancel-confirmation" class="px-4 py-2 text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
+                        Annuler
+                    </button>
+                    <button id="confirm-action" class="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition">
+                        Confirmer
+                    </button>
                 </div>
             </div>
         </div>
-
+        
     </div>
 
     <script type="text/javascript">
-        // Variables globales
-        let ws;
-        let currentRoomCode = null;
-        let myId = null;
-        let lobbyData = {};
+        // --- Variables Globales ---
         
-        // Coût d'un message (doit correspondre à la valeur serveur)
-        const ENERGY_COST_MESSAGE = 1; 
+        // L'utilisateur a demandé d'utiliser l'URL Render en dur (WSS)
+        const WS_URL = 'wss://webrtc-epuisement-professionnel.onrender.com';
+        
+        /*
+        // Ancien code pour la détection dynamique (décommenter si vous revenez au local)
+        // const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        // const WS_URL = `${protocol}${window.location.host}`; 
+        */
 
-        // Références DOM
+        let ws = null;
+        let currentRoomCode = null;
+        let lobbyData = {}; // Stocke les données du salon
+        let userId = null; // ID du client généré par le serveur
+        let nickname = null; // Surnom du joueur
+        let energy = 100;
+        let energyGainInterval = null;
+        const ENERGY_GAIN_RATE = 1; // 1 point d'énergie par seconde
+        const ENERGY_MAX = 100;
+        const ENERGY_COST_PER_MESSAGE = 10; // Coût d'un message
+        const MIN_PLAYERS = 4;
+
+
+        // --- Éléments du DOM ---
         const appContainer = document.getElementById('app-container');
         const homeView = document.getElementById('home-view');
         const lobbyView = document.getElementById('lobby-view');
-        
-        // Home View
-        const nicknameInputHome = document.getElementById('nickname-input-home');
+
+        const nicknameInput = document.getElementById('nickname-input');
         const codeInput = document.getElementById('code-input');
-        const errorMessageHome = document.getElementById('error-message-home');
-        const createLobbyBtn = document.getElementById('create-lobby-btn');
-        const joinLobbyBtn = document.getElementById('join-lobby-btn');
-        
-        // Lobby View
+        const joinBtn = document.getElementById('join-btn');
+        const createBtn = document.getElementById('create-btn');
+        const systemFeedback = document.getElementById('system-feedback');
+
         const lobbyCodeDisplay = document.getElementById('lobby-code-display');
-        const gameStatusDisplay = document.getElementById('game-status-display');
-        const playerCount = document.getElementById('player-count');
+        const hostBadge = document.getElementById('host-badge');
         const playersList = document.getElementById('players-list');
         const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
         const startGameBtn = document.getElementById('start-game-btn');
-        const startNextRoundBtn = document.getElementById('start-next-round-btn');
         
-        // Chat
         const messagesContainer = document.getElementById('messages-container');
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
-        
-        // Player Info
-        const myNicknameDisplay = document.getElementById('my-nickname');
-        const myRoleDisplay = document.getElementById('my-role');
-        const myEnergyDisplay = document.getElementById('my-energy');
-        const myScoreDisplay = document.getElementById('my-score');
-        
-        // Actions de jeu
-        const gameActionsContainer = document.getElementById('game-actions');
-        const teamworkTargetSelect = document.getElementById('teamwork-target-select');
-        const requestTeamworkBtn = document.getElementById('request-teamwork-btn');
+        const energyBar = document.getElementById('energy-bar');
 
-        // Modal
-        const modalBackdrop = document.getElementById('modal-backdrop');
-        const modalTitle = document.getElementById('modal-title');
-        const modalText = document.getElementById('modal-text');
-        const modalConfirmBtn = document.getElementById('modal-confirm-btn');
-        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+        const confirmationModal = document.getElementById('confirmation-modal');
+        const confirmationMessage = document.getElementById('confirmation-message');
+        let confirmationCallback = null;
 
+        // --- Navigation ---
 
-        // --- Fonctions de Navigation et UI ---
-
-        /** Navigue entre les vues (home, lobby). */
         function navigate(view) {
             homeView.classList.add('hidden');
             lobbyView.classList.add('hidden');
@@ -283,360 +201,346 @@
                 lobbyView.classList.remove('hidden');
             }
         }
-        
-        /** Affiche un message d'erreur/système via la modale. */
-        function showMessage(title, message) {
-            modalTitle.textContent = title;
-            modalTitle.classList.remove('text-red-400', 'text-green-400');
-            modalTitle.classList.add(title.toLowerCase().includes('erreur') ? 'text-red-400' : 'text-green-400');
-            modalText.textContent = message;
-            
-            modalConfirmBtn.textContent = 'OK';
-            modalConfirmBtn.onclick = hideModal;
-            modalConfirmBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
-            modalConfirmBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
-            
-            modalCancelBtn.classList.add('hidden');
-            
-            modalBackdrop.classList.remove('hidden');
-            modalBackdrop.classList.add('flex');
-        }
 
-        /** Affiche une demande de confirmation. */
-        function showConfirmation(message, onConfirm) {
-            modalTitle.textContent = "Confirmation";
-            modalTitle.classList.remove('text-red-400', 'text-green-400');
-            modalTitle.classList.add('text-yellow-400');
-            modalText.textContent = message;
-            
-            modalConfirmBtn.textContent = 'Confirmer';
-            modalConfirmBtn.onclick = () => {
-                hideModal();
-                onConfirm();
-            };
-            modalConfirmBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
-            modalConfirmBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+        // --- Persistance et Validation ---
 
-            modalCancelBtn.textContent = 'Annuler';
-            modalCancelBtn.onclick = hideModal;
-            modalCancelBtn.classList.remove('hidden');
-            
-            modalBackdrop.classList.remove('hidden');
-            modalBackdrop.classList.add('flex');
-        }
-        
-        /** Cache la modale. */
-        function hideModal() {
-            modalBackdrop.classList.add('hidden');
-            modalBackdrop.classList.remove('flex');
-        }
-        
-        /** Ajoute un message au conteneur de messages et le fait défiler. */
-        function appendMessage(sender, content, timestamp, type = 'user', isPatronne = false) {
-            const messageElement = document.createElement('div');
-            messageElement.classList.add('p-3', 'rounded-xl', 'max-w-[80%]', 'break-words', 'shadow-md');
-            
-            let senderClass = 'font-semibold';
-            let bgColor = 'bg-gray-600';
-            let senderName = sender;
-            
-            if (type === 'system') {
-                // Message système
-                messageElement.classList.add('text-center', 'mx-auto', 'text-sm', 'italic', 'text-gray-400');
-                messageElement.textContent = content;
-                messagesContainer.appendChild(messageElement);
-                
-            } else if (isPatronne) {
-                // POINT 3: Affichage du message de la Patronne comme un message normal mais stylisé
-                bgColor = 'bg-purple-800';
-                senderClass = 'font-extrabold text-pink-300';
-                senderName = 'La Patronne';
-                messageElement.classList.add('self-start', bgColor);
-                messageElement.innerHTML = `
-                    <p class="${senderClass}">${senderName}</p>
-                    <p>${content}</p>
-                `;
-                messagesContainer.appendChild(messageElement);
-                
-            } else if (sender === myNicknameDisplay.textContent) {
-                // Mon propre message
-                bgColor = 'bg-indigo-500';
-                messageElement.classList.add('self-end', bgColor);
-                messageElement.innerHTML = `
-                    <p class="font-semibold text-gray-200">Vous</p>
-                    <p>${content}</p>
-                `;
-                messagesContainer.appendChild(messageElement);
-
-            } else {
-                // Message d'un autre joueur
-                bgColor = 'bg-gray-600';
-                messageElement.classList.add('self-start', bgColor);
-                messageElement.innerHTML = `
-                    <p class="font-semibold text-blue-300">${sender}</p>
-                    <p>${content}</p>
-                `;
-                messagesContainer.appendChild(messageElement);
+        function initPersistance() {
+            // Récupérer le dernier surnom utilisé
+            const lastNickname = localStorage.getItem('lastNickname');
+            if (lastNickname) {
+                nicknameInput.value = lastNickname;
             }
-
-            // Défiler jusqu'au bas pour voir le nouveau message
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            updateButtonState();
         }
 
-        /** Met à jour la liste des joueurs et les informations personnelles. */
-        function updateLobbyUI(data) {
-            lobbyData = data;
-            
-            const myPlayer = lobbyData.lobbyData.players.find(p => p.id === myId);
-            const isHost = lobbyData.lobbyData.hostId === myId;
-            const gameStarted = lobbyData.lobbyData.gameStatus === 'STARTED';
-            const roundEnded = lobbyData.lobbyData.gameStatus === 'ROUND_END';
-            
-            // Mise à jour de l'en-tête et du statut
-            lobbyCodeDisplay.textContent = lobbyData.lobbyData.code;
-            gameStatusDisplay.textContent = `Statut: ${lobbyData.lobbyData.gameStatus}`;
-            
-            // Affichage des boutons hôte
-            startGameBtn.classList.toggle('hidden', !isHost || gameStarted || roundEnded);
-            startNextRoundBtn.classList.toggle('hidden', !isHost || !roundEnded);
-            
-            // Affichage de la zone d'actions de jeu
-            gameActionsContainer.classList.toggle('hidden', !gameStarted);
+        function updateButtonState() {
+            const isNicknameValid = nicknameInput.value.trim().length >= 3;
+            const isCodeValid = codeInput.value.trim().length === 5;
 
-            // Mise à jour de l'énergie et des infos personnelles
-            if (myPlayer) {
-                myNicknameDisplay.textContent = myPlayer.nickname;
-                myRoleDisplay.textContent = gameStarted ? `Rôle: ${myPlayer.role}` : 'Rôle: En attente...';
-                
-                // POINT 1: L'énergie n'a plus de maximum à afficher
-                const energy = myPlayer.energy.toFixed(1);
-                myEnergyDisplay.textContent = `Énergie: ${energy}`;
-                myScoreDisplay.textContent = `Score: ${myPlayer.score}`;
-                
-                // Activer/désactiver le chat en fonction de l'énergie
-                const canSendMessage = myPlayer.energy >= ENERGY_COST_MESSAGE && gameStarted;
-                messageInput.disabled = !canSendMessage;
-                sendMessageBtn.disabled = !canSendMessage;
-                
-                messageInput.placeholder = canSendMessage ? 
-                    `Écrivez un message (coût: ${ENERGY_COST_MESSAGE} énergie)` : 
-                    `Énergie insuffisante ou jeu non démarré (Min: ${ENERGY_COST_MESSAGE})`;
-            }
-
-            // Mise à jour de la liste des joueurs
-            playersList.innerHTML = '';
-            teamworkTargetSelect.innerHTML = '<option value="" disabled selected>Choisir un coéquipier</option>';
-            
-            let otherPlayersExist = false;
-            
-            lobbyData.lobbyData.players.forEach(player => {
-                const isMe = player.id === myId;
-                const isLobbyHost = player.id === lobbyData.lobbyData.hostId;
-                const energyText = `(E: ${player.energy.toFixed(1)})`;
-                
-                const li = document.createElement('li');
-                li.classList.add('flex', 'justify-between', 'items-center', 'p-2', 'rounded-lg', isMe ? 'bg-indigo-700' : 'bg-gray-600', 'shadow-sm');
-                
-                const nicknameSpan = document.createElement('span');
-                nicknameSpan.classList.add('font-medium', isMe ? 'text-white' : 'text-blue-200');
-                nicknameSpan.textContent = `${player.nickname} ${isMe ? '(Vous)' : ''} ${isLobbyHost ? '⭐' : ''}`;
-                
-                const detailsSpan = document.createElement('span');
-                detailsSpan.classList.add('text-sm', 'text-yellow-300');
-                detailsSpan.textContent = energyText;
-                
-                li.appendChild(nicknameSpan);
-                li.appendChild(detailsSpan);
-                playersList.appendChild(li);
-                
-                // Remplir le select de travail d'équipe
-                if (!isMe) {
-                    otherPlayersExist = true;
-                    const option = document.createElement('option');
-                    option.value = player.id;
-                    option.textContent = player.nickname;
-                    teamworkTargetSelect.appendChild(option);
-                }
-            });
-            
-            playerCount.textContent = lobbyData.lobbyData.players.length;
-            
-            // Activer/désactiver le bouton de travail d'équipe
-            const targetSelected = teamworkTargetSelect.value !== "";
-            requestTeamworkBtn.disabled = !gameStarted || !otherPlayersExist || !targetSelected;
-            
-            teamworkTargetSelect.onchange = () => {
-                const newTargetSelected = teamworkTargetSelect.value !== "";
-                requestTeamworkBtn.disabled = !gameStarted || !otherPlayersExist || !newTargetSelected;
-            };
+            createBtn.disabled = !isNicknameValid;
+            joinBtn.disabled = !(isNicknameValid && isCodeValid);
         }
 
+        // Écoute des entrées pour mettre à jour l'état des boutons
+        nicknameInput.addEventListener('input', updateButtonState);
+        codeInput.addEventListener('input', () => {
+            // Forcer la majuscule pour le code
+            codeInput.value = codeInput.value.toUpperCase();
+            updateButtonState();
+        });
 
-        // --- Fonctions de Communication WebSocket ---
 
-        /** Initialise la connexion WebSocket. */
+        // --- Gestion des WebSockets ---
+
         function initWebSocket() {
-            // Remplacez par l'URL de votre serveur, par défaut, le port 8080 local.
-            const serverUrl = `ws://${window.location.hostname}:8080`;
-            ws = new WebSocket(serverUrl);
-            
-            ws.onopen = () => {
-                console.log("Connexion WebSocket établie.");
-                // Tentative de récupérer l'ID utilisateur persisté
-                const storedId = localStorage.getItem('myId');
-                if (storedId) {
-                    myId = storedId;
-                    console.log(`ID utilisateur restauré: ${myId}`);
+            try {
+                if (ws) {
+                    ws.close();
                 }
-            };
+                
+                // L'initialisation utilise maintenant l'URL Render codée en dur
+                ws = new WebSocket(WS_URL);
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleServerMessage(data);
-                } catch (e) {
-                    console.error("Erreur de parsing du message serveur:", e);
-                }
-            };
+                ws.onopen = () => {
+                    console.log(`[WS] Connecté au serveur: ${WS_URL}`);
+                    // Une fois connecté, essayer de se reconnecter au lobby si le code est stocké
+                    const storedCode = localStorage.getItem('currentRoomCode');
+                    const storedNickname = localStorage.getItem('lastNickname');
+                    
+                    if (storedCode && storedNickname) {
+                        currentRoomCode = storedCode;
+                        nickname = storedNickname;
+                        sendToServer({ 
+                            action: 'REJOIN_LOBBY', 
+                            code: storedCode, 
+                            nickname: storedNickname 
+                        });
+                    }
+                };
 
-            ws.onclose = (event) => {
-                console.log("Connexion WebSocket fermée.", event);
-                // Si la déconnexion n'est pas initiée par un 'LEAVE_LOBBY'
-                if (currentRoomCode) {
-                    showMessage("Déconnexion", "La connexion au serveur a été perdue. Veuillez essayer de rejoindre à nouveau.");
-                    leaveLobby();
-                }
-            };
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleMessage(data);
+                    } catch (e) {
+                        console.error("[WS] Erreur de parsing JSON:", e, event.data);
+                    }
+                };
 
-            ws.onerror = (error) => {
-                console.error("Erreur WebSocket:", error);
-            };
-        }
+                ws.onclose = (event) => {
+                    console.log(`[WS] Déconnecté du serveur (Code: ${event.code}, Raison: ${event.reason})`);
+                    // Gérer la déconnexion
+                    handleDisconnection();
+                    // Tenter une reconnexion après 3 secondes
+                    setTimeout(initWebSocket, 3000);
+                };
 
-        /** Envoie un message au serveur. */
-        function sendToServer(data) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // Ajouter l'ID du client à chaque message pour l'identification (utile pour la première connexion)
-                if (myId) {
-                    data.id = myId;
-                }
-                ws.send(JSON.stringify(data));
-            } else {
-                showMessage("Erreur", "Connexion au serveur non établie. Veuillez réessayer.");
+                ws.onerror = (error) => {
+                    console.error("[WS] Erreur WebSocket:", error);
+                    displayFeedback("Erreur de connexion au serveur. Vérifiez l'URL ou la disponibilité du serveur.");
+                };
+            } catch (error) {
+                console.error("[GLOBAL] Erreur lors de l'initialisation du WebSocket:", error);
+                displayFeedback("Impossible de créer la connexion WebSocket. L'URL du serveur est peut-être incorrecte.");
             }
         }
 
-        /** Traite les messages reçus du serveur. */
-        function handleServerMessage(data) {
-            switch (data.action) {
-                case 'ERROR':
-                    console.error("Erreur du serveur:", data.content);
-                    showMessage("Erreur", data.content);
-                    // Afficher l'erreur dans la vue courante (home ou lobby)
-                    const targetErrorDisplay = currentRoomCode ? null : errorMessageHome;
-                    if (targetErrorDisplay) {
-                        targetErrorDisplay.textContent = data.content;
-                        targetErrorDisplay.classList.remove('hidden');
-                        setTimeout(() => targetErrorDisplay.classList.add('hidden'), 5000);
-                    }
-                    break;
-                    
+        function sendToServer(message) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(message));
+            } else {
+                console.warn("[WS] Tentative d'envoi de message sans connexion ouverte.");
+                displayFeedback("Serveur déconnecté. Tentative de reconnexion...");
+            }
+        }
+
+        function handleMessage(data) {
+            // console.log("[DATA REÇUE]", data); // Décommenter pour debug
+            
+            switch(data.action) {
                 case 'LOBBY_CREATED':
                 case 'LOBBY_JOINED':
+                case 'LOBBY_REJOINED':
+                    // Actions communes lors de la réussite d'une connexion
                     currentRoomCode = data.code;
-                    navigate('lobby');
-                    // L'ID est souvent retourné par le serveur, mais il sera aussi dans LOBBY_UPDATE
-                    break;
+                    userId = data.userId;
+                    nickname = localStorage.getItem('lastNickname'); // On réutilise le nickname stocké
+                    localStorage.setItem('currentRoomCode', currentRoomCode);
                     
-                case 'LOBBY_LEFT':
-                    leaveLobby();
+                    displayFeedback(`Connecté au salon ${currentRoomCode}.`, 'green');
+                    updateLobbyUI(data.lobby);
+                    navigate('lobby');
+                    break;
+                
+                case 'LOBBY_UPDATE':
+                    updateLobbyUI(data.lobby);
                     break;
 
-                case 'LOBBY_UPDATE':
-                    // Récupérer et persister l'ID (utile lors de la première connexion ou reconnexion)
-                    const myPlayerInUpdate = data.lobbyData.players.find(p => p.nickname === nicknameInputHome.value.substring(0, 15).trim() || p.id === myId);
-                    if (myPlayerInUpdate && !myId) {
-                        myId = myPlayerInUpdate.id;
-                        localStorage.setItem('myId', myId);
+                case 'LOBBY_LEFT':
+                    // Le serveur a confirmé la sortie
+                    leaveLobby();
+                    break;
+                    
+                case 'ERROR':
+                    console.error(`[SERVER ERROR] ${data.content}`);
+                    displayFeedback(data.content);
+                    if (data.disconnect) {
+                        // En cas d'erreur critique (ex: salon plein/inexistant)
+                        handleDisconnection();
                     }
-                    updateLobbyUI(data);
                     break;
 
                 case 'SYSTEM_MESSAGE':
-                    appendMessage('Système', data.content, data.timestamp, 'system');
+                    addMessage(data.content, 'system');
                     break;
-                    
+
                 case 'MESSAGE':
-                    // POINT 3: Le message de la Patronne est maintenant traité ici
-                    appendMessage(data.sender, data.content, data.timestamp, 'user', data.isPatronne);
-                    break;
-                    
-                case 'TEAMWORK_REQUEST_RECEIVED':
-                    showConfirmation(`Demande de travail d'équipe reçue de ${data.from}. Accepter ?`, () => {
-                        // TODO: Logique d'acceptation à envoyer au serveur
-                        appendMessage('Système', `Vous avez accepté la demande de travail d'équipe de ${data.from}.`, Date.now(), 'system');
-                    });
+                    addMessage(data.content, 'chat', data.sender, data.timestamp);
                     break;
 
-                default:
-                    console.warn("Message inconnu reçu:", data);
+                case 'GAME_STARTING':
+                    addMessage("Le jeu va commencer ! Préparation des rôles...", 'system-important');
+                    // TODO: Passer à la vue de jeu
+                    break;
+                
+                // ... autres actions du jeu (rôles, votes, etc.)
             }
         }
-        
-        // --- Fonctions de Jeu/Lobby ---
 
-        function createLobby() {
-            const nickname = nicknameInputHome.value.trim();
-            if (!nickname) {
-                showMessage("Erreur", "Veuillez entrer un pseudonyme.");
-                return;
-            }
-            sendToServer({
-                action: 'CREATE_LOBBY',
-                nickname: nickname
-            });
-        }
+        // --- Fonctions de l'Interface Utilisateur ---
         
-        function joinLobby() {
-            const nickname = nicknameInputHome.value.trim();
-            const code = codeInput.value.trim();
-            if (!nickname) {
-                showMessage("Erreur", "Veuillez entrer un pseudonyme.");
-                return;
-            }
-            if (code.length !== 5) {
-                showMessage("Erreur", "Le code du salon doit comporter 5 chiffres.");
-                return;
-            }
-            sendToServer({
-                action: 'JOIN_LOBBY',
-                code: code,
-                nickname: nickname
-            });
+        function updateEnergyDisplay() {
+            energyBar.style.width = `${energy}%`;
         }
-        
-        function leaveLobby() {
-            messagesContainer.innerHTML = '';
-            currentRoomCode = null;
-            lobbyData = {};
-            // myId est conservé pour la persistance, mais le ws.id est mis à jour à la reconnexion
+
+        function startEnergyGain() {
+            if (energyGainInterval) clearInterval(energyGainInterval);
+            energyGainInterval = setInterval(() => {
+                if (energy < ENERGY_MAX) {
+                    energy = Math.min(ENERGY_MAX, energy + ENERGY_GAIN_RATE);
+                    updateEnergyDisplay();
+                }
+            }, 1000); // Gagner de l'énergie chaque seconde
+        }
+
+        function stopEnergyGain() {
+            if (energyGainInterval) {
+                clearInterval(energyGainInterval);
+                energyGainInterval = null;
+            }
+        }
+
+        function updateLobbyUI(lobby) {
+            lobbyData = lobby;
+            lobbyCodeDisplay.textContent = lobby.code;
+            document.getElementById('player-count').textContent = lobby.clients.length;
             
-            navigate('home');
-            clearMessage();
+            // Mise à jour de la liste des joueurs
+            playersList.innerHTML = '';
+            lobby.clients.forEach(client => {
+                const isHost = client.id === lobby.hostId;
+                const isMe = client.id === userId;
+                const li = document.createElement('li');
+                li.className = 'flex items-center space-x-2';
+                
+                let text = client.nickname;
+                if (isMe) {
+                    text += " (Moi)";
+                }
+                if (isHost) {
+                    text += " 🔥"; // Indicateur hôte
+                }
+                
+                li.textContent = text;
+                playersList.appendChild(li);
+            });
+            
+            // Gestion du badge Hôte et du bouton Démarrer
+            const isHost = userId === lobby.hostId;
+            if (isHost) {
+                hostBadge.classList.remove('hidden');
+                startGameBtn.classList.remove('hidden');
+                
+                // Mettre à jour l'état du bouton Démarrer
+                const canStart = lobby.clients.length >= MIN_PLAYERS;
+                startGameBtn.disabled = !canStart;
+            } else {
+                hostBadge.classList.add('hidden');
+                startGameBtn.classList.add('hidden');
+            }
+            
+            // S'assurer que le gain d'énergie est actif une fois dans le lobby
+            startEnergyGain();
+        }
+
+        function addMessage(content, type, sender = null, timestamp = null) {
+            const messageEl = document.createElement('div');
+            messageEl.classList.add('p-2', 'rounded-lg', 'break-words', 'shadow-sm');
+            
+            let htmlContent = '';
+            
+            if (type === 'chat') {
+                messageEl.classList.add('bg-white', 'text-gray-800', 'border', 'border-gray-200');
+                const time = timestamp ? new Date(timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+                htmlContent = `
+                    <p class="font-semibold text-sm ${sender === nickname ? 'text-indigo-600' : 'text-green-600'}">${sender} <span class="text-xs font-normal text-gray-400 ml-2">${time}</span></p>
+                    <p class="text-gray-700">${content}</p>
+                `;
+            } else if (type === 'system') {
+                messageEl.classList.add('bg-gray-200', 'text-gray-600', 'text-sm', 'text-center');
+                htmlContent = content;
+            } else if (type === 'system-important') {
+                messageEl.classList.add('bg-red-100', 'text-red-700', 'font-bold', 'text-center', 'text-sm');
+                htmlContent = content;
+            }
+            
+            messageEl.innerHTML = htmlContent;
+            messagesContainer.appendChild(messageEl);
+            // Faire défiler vers le bas
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
+        function displayFeedback(message, type = 'red') {
+            systemFeedback.textContent = message;
+            systemFeedback.className = `text-center text-sm min-h-[1.5rem] mt-2`;
+            if (type === 'red') {
+                systemFeedback.classList.add('text-red-500');
+            } else if (type === 'green') {
+                systemFeedback.classList.add('text-green-500');
+            }
+            setTimeout(() => {
+                 // Effacer le message après un court délai
+                if (systemFeedback.textContent === message) {
+                    systemFeedback.textContent = '';
+                }
+            }, 5000);
+        }
+
+        function clearMessage() {
+            displayFeedback('');
+        }
+
+        function handleDisconnection() {
+            localStorage.removeItem('currentRoomCode');
+            currentRoomCode = null;
+            nickname = null;
+            stopEnergyGain();
+            navigate('home');
+            addMessage("Vous avez été déconnecté du serveur.", 'system-important');
+        }
+
+        // --- Modale de Confirmation ---
+        
+        function showConfirmation(message, callback) {
+            confirmationMessage.textContent = message;
+            confirmationCallback = callback;
+            confirmationModal.classList.remove('hidden');
+            confirmationModal.classList.add('flex');
+        }
+
+        document.getElementById('confirm-action').addEventListener('click', () => {
+            confirmationModal.classList.remove('flex');
+            confirmationModal.classList.add('hidden');
+            if (confirmationCallback) {
+                confirmationCallback();
+            }
+        });
+
+        document.getElementById('cancel-confirmation').addEventListener('click', () => {
+            confirmationModal.classList.remove('flex');
+            confirmationModal.classList.add('hidden');
+            confirmationCallback = null;
+        });
+
+
+        // --- Logique de l'Application ---
+        
+        createBtn.addEventListener('click', () => {
+            nickname = nicknameInput.value.trim();
+            localStorage.setItem('lastNickname', nickname);
+            
+            sendToServer({ 
+                action: 'CREATE_LOBBY', 
+                nickname: nickname 
+            });
+        });
+
+        joinBtn.addEventListener('click', () => {
+            nickname = nicknameInput.value.trim();
+            const code = codeInput.value.trim().toUpperCase();
+            localStorage.setItem('lastNickname', nickname);
+
+            sendToServer({ 
+                action: 'JOIN_LOBBY', 
+                code: code, 
+                nickname: nickname 
+            });
+        });
+
+        startGameBtn.addEventListener('click', () => {
+            if (userId === lobbyData.hostId) {
+                 sendToServer({
+                    action: 'START_GAME'
+                });
+            } else {
+                displayFeedback("Seul l'hôte peut démarrer le jeu.");
+            }
+        });
+
         function sendMessage() {
             const content = messageInput.value.trim();
             if (content.length === 0) {
                 return;
             }
             
-            // Vérification simple côté client (la vérification serveur fait autorité)
-            const myPlayer = lobbyData.lobbyData.players.find(p => p.id === myId);
-            if (!myPlayer || myPlayer.energy < ENERGY_COST_MESSAGE) {
-                showMessage("Énergie Faible", `Vous n'avez pas assez d'énergie pour parler (coût: ${ENERGY_COST_MESSAGE}).`);
+            if (energy < ENERGY_COST_PER_MESSAGE) {
+                displayFeedback(`Vous n'avez pas assez d'énergie pour parler. Coût: ${ENERGY_COST_PER_MESSAGE}.`);
                 return;
             }
+            
+            // Dépenser l'énergie
+            energy = Math.max(0, energy - ENERGY_COST_PER_MESSAGE);
+            updateEnergyDisplay();
 
             sendToServer({
                 action: 'MESSAGE',
@@ -646,40 +550,6 @@
             messageInput.value = '';
         }
         
-        function requestTeamwork() {
-            const targetId = teamworkTargetSelect.value;
-            if (!targetId) {
-                showMessage("Erreur", "Veuillez sélectionner un joueur.");
-                return;
-            }
-            
-            // POINT 4: Vérification client pour éviter de s'inclure soi-même (même si le serveur vérifie aussi)
-            if (targetId === myId) {
-                showMessage("Erreur", "Vous ne pouvez pas vous proposer un travail d'équipe à vous-même.");
-                return;
-            }
-            
-            sendToServer({
-                action: 'REQUEST_TEAMWORK',
-                targetId: targetId
-            });
-        }
-        
-        // --- Événements Clavier/Bouton ---
-
-        createLobbyBtn.addEventListener('click', createLobby);
-        joinLobbyBtn.addEventListener('click', joinLobby);
-        startGameBtn.addEventListener('click', () => {
-             showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Les joueurs ne pourront plus rejoindre.", () => {
-                sendToServer({ action: 'START_GAME' });
-            });
-        });
-        startNextRoundBtn.addEventListener('click', () => {
-             showConfirmation("Démarrer la manche suivante ? L'énergie sera conservée.", () => {
-                sendToServer({ action: 'START_NEXT_ROUND' });
-            });
-        });
-
         leaveLobbyBtn.addEventListener('click', () => {
             showConfirmation("Êtes-vous sûr de vouloir quitter le salon ? La déconnexion est immédiate.", () => {
                 sendToServer({
@@ -688,8 +558,18 @@
             });
         });
         
+        function leaveLobby() {
+            messagesContainer.innerHTML = '';
+            currentRoomCode = null;
+            lobbyData = {};
+            // NOTE: stopTimer() non utilisé pour l'instant
+            stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
+            navigate('home');
+            clearMessage();
+        }
+
+        // --- Événements Clavier/Bouton ---\r\n        
         sendMessageBtn.addEventListener('click', sendMessage);
-        requestTeamworkBtn.addEventListener('click', requestTeamwork);
 
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -698,31 +578,8 @@
             }
         });
         
-        // --- Persistance et Initialisation ---
-        
-        /** Initialise la persistance des données. */
-        function initPersistance() {
-             // Charger le dernier pseudo utilisé
-            const lastNickname = localStorage.getItem('lastNickname');
-            if (lastNickname) {
-                nicknameInputHome.value = lastNickname;
-            }
-            
-            // Sauvegarder le pseudo à chaque frappe (démo)
-            nicknameInputHome.addEventListener('input', () => {
-                 localStorage.setItem('lastNickname', nicknameInputHome.value.substring(0, 15).trim());
-            });
-        }
-        
-        /** Nettoie le message d'accueil. */
-        function clearMessage() {
-            // S'assurer que les messages d'erreur de connexion sont masqués lors de la navigation
-            errorMessageHome.classList.add('hidden');
-        }
-
-        // --- Initialisation ---
+        // --- Initialisation ---\r\n        
         initPersistance(); 
         window.onload = initWebSocket;
     </script>
 </body>
-</html>
