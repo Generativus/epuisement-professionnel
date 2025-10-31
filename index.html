@@ -11,6 +11,38 @@
         :root {
             font-family: 'Inter', sans-serif;
         }
+
+        /* FLEXBOX CRUCIAL pour l'optimisation mobile/clavier */
+        /* Le corps prend la hauteur de l'écran visible */
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0; /* Retirer le padding du body global */
+        }
+        
+        /* Le conteneur d'application prend la hauteur totale de l'écran ou une taille maximale sur desktop */
+        #app-container {
+            height: 100vh; /* Permet au Flexbox de fonctionner en pleine hauteur */
+            max-height: 100vh; /* S'assure qu'il ne dépasse pas sur mobile */
+            width: 100%;
+            max-width: 6xl; /* Taille maximale pour desktop */
+            margin: 0;
+            border-radius: 0;
+        }
+
+        /* Sur les grands écrans, on restaure un look centré et arrondi */
+        @media (min-width: 768px) {
+            #app-container {
+                height: 90vh;
+                max-height: 800px;
+                width: 95%;
+                border-radius: 0.75rem; /* rounded-xl */
+                margin: 2rem;
+            }
+        }
+
         /* Style pour les messages envoyés par l'utilisateur courant */
         .message-me {
             justify-content: flex-end;
@@ -49,10 +81,10 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+<body class="bg-gray-100">
 
     <!-- Conteneur principal de l'application -->
-    <div id="app-container" class="bg-white shadow-2xl rounded-xl w-full max-w-lg md:max-w-xl lg:max-w-2xl overflow-hidden flex flex-col h-[90vh] max-h-[800px]">
+    <div id="app-container" class="bg-white shadow-2xl overflow-hidden flex flex-col">
 
         <!-- Écran de Connexion (Home) -->
         <div id="home-screen" class="p-6 md:p-8 flex flex-col items-center justify-center flex-grow">
@@ -90,20 +122,29 @@
         </div>
 
         <!-- Écran de Chat (Lobby/Jeu) -->
-        <div id="chat-screen" class="hidden flex-col flex-grow">
+        <!-- Flexbox principal qui permet au conteneur de messages de s'ajuster -->
+        <div id="chat-screen" class="hidden flex-col flex-grow h-full">
             
-            <!-- Barre de menu du jeu/lobby -->
-            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg">
+            <!-- Barre de menu du jeu/lobby (Hauteur fixe) -->
+            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg flex-shrink-0">
                 <div class="flex items-center space-x-4 mb-2 sm:mb-0 w-full sm:w-auto justify-between">
                     <h2 class="text-lg font-bold">Salon <span id="current-room-code" class="ml-1 bg-blue-600 text-white text-sm font-mono tracking-widest px-2 py-0.5 rounded"></span></h2>
                     
                     <p id="player-count-display" class="text-sm flex items-center">
+                        <!-- Icône utilisateur -->
                         <svg class="w-4 h-4 mr-1 text-green-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
                         <span id="player-count">1</span> / <span id="max-players">?</span> Joueurs
                     </p>
                 </div>
 
-                <div class="flex items-center space-x-3 mt-2 sm:mt-0">
+                <div class="flex items-center space-x-3 mt-2 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
+                    <!-- Affichage de l'énergie (Ajout) -->
+                    <div id="energy-display-container" class="flex items-center bg-yellow-400 text-gray-900 font-extrabold px-3 py-1 rounded-full shadow-inner">
+                         <!-- Icône d'Éclair/Énergie -->
+                         <svg class="w-4 h-4 mr-1 fill-current" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M13 14H7a2 2 0 00-2 2v2a2 2 0 002 2h6a2 2 0 002-2v-2a2 2 0 00-2-2zM5.5 8.79l3.5-6.75a.5.5 0 01.9-.02l3.5 6.75A.5.5 0 0113 9H7a.5.5 0 01-.5-.21z"></path></svg>
+                         <span id="energy-points">0</span>
+                    </div>
+
                     <button id="start-game-btn"
                             class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 shadow-md flex-shrink-0 disabled:bg-red-900 disabled:opacity-50 hidden">
                         Démarrer le Jeu
@@ -114,21 +155,21 @@
                 </div>
             </header>
 
-            <!-- Affichage de l'état du jeu et du timer -->
-            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 hidden">
+            <!-- Affichage de l'état du jeu et du timer (Hauteur fixe) -->
+            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 flex-shrink-0 hidden">
                 <p id="game-status-text">
                     <span id="timer-display" class="text-xl text-red-600 font-extrabold font-mono">15:00</span> - Débat en cours
                 </p>
             </div>
 
 
-            <!-- Zone d'affichage des messages -->
-            <div id="messages-container" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar bg-white">
+            <!-- Zone d'affichage des messages (Zone de taille flexible et scrollable) -->
+            <div id="messages-container" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar bg-white min-h-0">
                 <!-- Les messages seront insérés ici par JavaScript -->
             </div>
 
-            <!-- Zone de saisie de message -->
-            <footer class="p-4 border-t border-gray-200 bg-gray-50">
+            <!-- Zone de saisie de message (Hauteur fixe) -->
+            <footer class="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <div class="flex space-x-3">
                     <input id="message-input" type="text" placeholder="Écrivez un message..."
                            class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
@@ -178,15 +219,20 @@
         // --- Constantes de Jeu ---
         const MIN_PLAYERS = 4;
         const GAME_DURATION_SECONDS = 900; // 15 minutes
+        const ENERGY_GAIN_AMOUNT = 10;
+        const ENERGY_GAIN_INTERVAL_MS = 10000; // 10 secondes
+
         
         // --- Variables Globales ---
         let ws = null;
         let userId = null; 
         let currentRoomCode = null;
         let nickname = '';
-        let lobbyData = {}; // Stocke les données du lobby (hostId, playerCount, gameStatus, etc.)
+        let lobbyData = {}; 
         let gameTimerInterval = null;
         let remainingTime = GAME_DURATION_SECONDS;
+        let energyPoints = 0; // Points d'énergie du joueur
+        let energyInterval = null; // Intervalle pour le gain d'énergie
 
 
         // --- Références DOM ---
@@ -202,7 +248,6 @@
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
         const currentRoomCodeDisplay = document.getElementById('current-room-code');
-        // FIX: Suppression de la référence `currentNicknameDisplay` qui n'existe plus dans le DOM.
         const loadingOverlay = document.getElementById('loading-overlay');
         
         const confirmDialog = document.getElementById('confirmation-dialog');
@@ -215,6 +260,7 @@
         const playerCountDisplay = document.getElementById('player-count');
         const gameStatusBar = document.getElementById('game-status-bar');
         const timerDisplay = document.getElementById('timer-display');
+        const energyPointsDisplay = document.getElementById('energy-points'); // Nouvel affichage d'énergie
 
 
         // --- Fonctions de Persistance ---
@@ -263,6 +309,7 @@
         }
 
         function navigate(screen) {
+            // S'assurer que le Flexbox fonctionne pour la navigation
             homeScreen.classList.add('hidden');
             chatScreen.classList.add('hidden');
             if (screen === 'home') {
@@ -274,7 +321,7 @@
         }
 
         function displayMessage({ senderId, senderNickname, content, timestamp, isSystem = false }) {
-            // ... (logique d'affichage des messages inchangée) ...
+            // ... (logique d'affichage des messages) ...
             const messageDiv = document.createElement('div');
 
             if (isSystem) {
@@ -319,9 +366,8 @@
         }
         
         function startTimer() {
-            // Arrêter tout timer précédent
             clearInterval(gameTimerInterval);
-            remainingTime = GAME_DURATION_SECONDS; // Réinitialiser à 15 minutes
+            remainingTime = GAME_DURATION_SECONDS; 
             timerDisplay.textContent = formatTime(remainingTime);
             
             gameTimerInterval = setInterval(() => {
@@ -330,7 +376,7 @@
                 
                 if (remainingTime <= 0) {
                     clearInterval(gameTimerInterval);
-                    // TODO: Gérer la fin du jeu (vote forcé, etc.)
+                    // TODO: Gérer la fin du jeu 
                     displayMessage({
                         content: "FIN DU TEMPS ! Le jeu est terminé.",
                         timestamp: Date.now(),
@@ -342,7 +388,42 @@
 
         function stopTimer() {
             clearInterval(gameTimerInterval);
-            remainingTime = GAME_DURATION_SECONDS; // Réinitialiser pour le prochain jeu
+            remainingTime = GAME_DURATION_SECONDS; 
+        }
+        
+        // --- Gestion de l'Énergie ---
+
+        function updateEnergyDisplay() {
+            // Mettre à jour l'affichage de l'énergie uniquement si le joueur est dans le chat/lobby
+            if (!chatScreen.classList.contains('hidden')) {
+                energyPointsDisplay.textContent = energyPoints;
+            }
+        }
+
+        function gainEnergy() {
+            energyPoints += ENERGY_GAIN_AMOUNT;
+            updateEnergyDisplay();
+            // TODO: Envoyer un message au serveur pour synchroniser ou pour le score final
+            console.log(`+${ENERGY_GAIN_AMOUNT} Énergie. Total: ${energyPoints}`);
+        }
+
+        function startEnergyGain() {
+            // S'assurer qu'on ne démarre le gain que si l'intervalle n'est pas déjà actif
+            if (energyInterval) return;
+
+            // Réinitialiser l'énergie au début du jeu (car l'appel est maintenant conditionnel à gameStatus == 'STARTED')
+            energyPoints = 0; 
+            updateEnergyDisplay();
+            
+            // Démarrer le nouvel intervalle de gain
+            energyInterval = setInterval(gainEnergy, ENERGY_GAIN_INTERVAL_MS);
+            console.log("Gain d'énergie démarré (10 points / 10s).");
+        }
+
+        function stopEnergyGain() {
+            clearInterval(energyInterval);
+            energyInterval = null;
+            console.log("Gain d'énergie stoppé.");
         }
 
 
@@ -404,8 +485,8 @@
             };
 
             ws.onerror = (error) => {
-                console.error("Erreur WebSocket:", error);
-                // Le client se figeait ici. hideLoading() est déplacé pour être certain que le chargement se masque.
+                // L'objet d'erreur de la console est un Event, souvent sans détails spécifiques
+                console.error("Erreur WebSocket:", error); 
                 hideLoading(); 
                 alertMessage("Échec de la connexion ou erreur critique WebSocket. Veuillez réessayer.", true);
             };
@@ -417,13 +498,14 @@
                 }
                 ws = null;
                 hideLoading();
-                stopTimer(); // Arrêter le timer en cas de déconnexion
+                stopTimer(); 
+                stopEnergyGain(); // Arrêter le gain d'énergie
             };
         }
 
         /** Met à jour l'interface du lobby avec les données du serveur */
         function updateLobbyUI(data) {
-            lobbyData = data; // Stocker les données du lobby
+            lobbyData = data; 
 
             const isHost = userId === data.hostId;
             const isGameReady = data.playerCount >= MIN_PLAYERS;
@@ -458,10 +540,16 @@
                     });
                     startTimer();
                 }
+                
+                // CORRECTION 1: Le gain d'énergie commence uniquement quand le jeu est démarré.
+                if (!energyInterval) {
+                    startEnergyGain();
+                }
             } else {
                  // Si le jeu est arrêté ou en attente
                  stopTimer();
-                 // Si le jeu est en attente, le chat est désactivé
+                 stopEnergyGain(); // Arrêter le gain d'énergie
+                 
                  if (data.gameStatus === 'WAITING') {
                      messageInput.placeholder = "En attente du lancement du jeu par l'hôte...";
                  } else {
@@ -478,11 +566,11 @@
                     currentRoomCode = data.code;
                     enterLobby(data.code);
                     alertMessage(data.message, false);
-                    updateLobbyUI(data.lobby); // Mise à jour initiale
+                    updateLobbyUI(data.lobby); 
+                    // Retiré: startEnergyGain(); // Le gain d'énergie est maintenant déclenché par updateLobbyUI sur 'STARTED'
                     break;
                 
                 case 'LOBBY_UPDATE':
-                    // Réception des données du lobby en temps réel
                     updateLobbyUI(data.lobby);
                     break;
                     
@@ -497,7 +585,7 @@
                         timestamp: Date.now(),
                         isSystem: true
                     });
-                    // Le LOBBY_UPDATE suivant confirmera le statut et lancera le timer
+                    // Le LOBBY_UPDATE suivant confirmera le statut et gérera le timer/énergie
                     break;
 
                 case 'MESSAGE_RECEIVED':
@@ -512,7 +600,7 @@
                 case 'SYSTEM_MESSAGE':
                     displayMessage({
                         content: data.content,
-                        timestamp: Date.now(), // Utiliser l'heure actuelle si non fournie (sécurité)
+                        timestamp: Date.now(), 
                         isSystem: true
                     });
                     break;
@@ -583,23 +671,25 @@
 
         function enterLobby(code) {
             currentRoomCodeDisplay.textContent = code;
-            // FIX: La ligne qui causait l'erreur est supprimée
             messagesContainer.innerHTML = '';
             joinCodeInput.value = '';
             navigate('chat');
+            // Initialisation de l'énergie à 0 et affichage
+            energyPoints = 0;
+            updateEnergyDisplay(); 
         }
 
         function sendMessage() {
             const content = messageInput.value.trim();
             if (content === "" || !currentRoomCode) return;
             
-            // Vérification simple côté client pour l'état du jeu
             if (lobbyData.gameStatus !== 'STARTED') {
-                 // Afficher le message d'erreur directement car l'input est désactivé si non-STARTED, 
-                 // mais on garde la vérification par sécurité.
                  alertMessage("Le chat est désactivé tant que le jeu n'est pas démarré.", true);
                  return;
             }
+            
+            // TODO: Vérifier si le joueur a assez d'énergie pour parler et la dépenser.
+            // Pour l'instant, on laisse le chat libre pour les tests.
 
             sendToServer({
                 action: 'MESSAGE',
@@ -621,7 +711,8 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            stopTimer(); // Arrêter le timer
+            stopTimer(); 
+            stopEnergyGain(); // CORRECTION 2: S'assurer que le gain d'énergie s'arrête en quittant
             navigate('home');
             clearMessage();
         }
