@@ -144,12 +144,6 @@
         // L'utilisateur a demandé d'utiliser l'URL Render en dur (WSS)
         const WS_URL = 'wss://webrtc-epuisement-professionnel.onrender.com';
         
-        /*
-        // Ancien code pour la détection dynamique (décommenter si vous revenez au local)
-        // const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        // const WS_URL = `${protocol}${window.location.host}`; 
-        */
-
         let ws = null;
         let currentRoomCode = null;
         let lobbyData = {}; // Stocke les données du salon
@@ -192,27 +186,17 @@
         // --- Navigation ---
 
         function navigate(view) {
-            console.log(`[NAV] Appel: navigate('${view}'). Tentative de modification des classes 'hidden'.`); // LOG DE DÉBOGAGE
-            
-            // NOTE: Le conteneur #app-container a 'flex flex-col' pour la vue lobby.
-            // La vue home-view a 'max-w-md mx-auto w-full' pour centrer.
-            // On s'assure que le conteneur principal reste flex pour la vue lobby, ou s'adapte pour la vue home.
-            
             homeView.classList.add('hidden');
             lobbyView.classList.add('hidden');
             
             if (view === 'home') {
                 homeView.classList.remove('hidden');
-                // Ajuster l'alignement pour centrer la page d'accueil
-                appContainer.classList.remove('flex-1', 'flex-col'); // Supprimer les classes de flexbox du lobby si besoin
+                appContainer.classList.remove('flex-1', 'flex-col'); 
                 appContainer.classList.add('flex', 'flex-col', 'items-center', 'justify-center');
-                console.log(`[NAV] Statut: homeView visible? ${!homeView.classList.contains('hidden')}`); // LOG DE DÉBOGAGE
             } else if (view === 'lobby') {
                 lobbyView.classList.remove('hidden');
-                // Réappliquer les classes pour le layout du lobby
-                appContainer.classList.remove('items-center', 'justify-center'); // Supprimer le centrage vertical/horizontal
+                appContainer.classList.remove('items-center', 'justify-center'); 
                 appContainer.classList.add('flex', 'flex-col', 'flex-1');
-                console.log(`[NAV] Statut: lobbyView visible? ${!lobbyView.classList.contains('hidden')}`); // LOG DE DÉBOGAGE
             }
         }
 
@@ -257,7 +241,6 @@
 
                 ws.onopen = () => {
                     console.log(`[WS] Connecté au serveur: ${WS_URL}`);
-                    // Une fois connecté, essayer de se reconnecter au lobby si le code est stocké
                     const storedCode = localStorage.getItem('currentRoomCode');
                     const storedNickname = localStorage.getItem('lastNickname');
                     
@@ -283,9 +266,7 @@
 
                 ws.onclose = (event) => {
                     console.log(`[WS] Déconnecté du serveur (Code: ${event.code}, Raison: ${event.reason})`);
-                    // Gérer la déconnexion
                     handleDisconnection();
-                    // Tenter une reconnexion après 3 secondes
                     setTimeout(initWebSocket, 3000);
                 };
 
@@ -309,33 +290,26 @@
         }
 
         function handleMessage(data) {
-            // console.log("[DATA REÇUE]", data); // Décommenter pour debug
-            
             switch(data.action) {
                 case 'LOBBY_CREATED':
                 case 'LOBBY_JOINED':
                 case 'LOBBY_REJOINED':
-                    console.log(`[NAV] Succès: Tentative de navigation vers 'lobby'. Données reçues:`, data); // LOG DE DÉBOGAGE
-                    
                     // Actions communes lors de la réussite d'une connexion
-                    // IMPORTANT: Mettre à jour userId ici est CRUCIAL pour la logique hôte/bouton Démarrer
                     currentRoomCode = data.code;
                     userId = data.userId; 
                     nickname = localStorage.getItem('lastNickname'); 
                     localStorage.setItem('currentRoomCode', currentRoomCode);
                     
                     displayFeedback(`Connecté au salon ${currentRoomCode}.`, 'green');
-                    // Nous naviguons ici, puis attendons LOBBY_UPDATE pour remplir l'UI.
                     navigate('lobby');
                     break;
                 
                 case 'LOBBY_UPDATE':
-                    // On accepte data.lobby (préféré) ou data.lobbyData (observé dans l'erreur)
-                    updateLobbyUI(data.lobbyData || data.lobby);
+                    // Correction : Utilisation de data.lobbyData comme source principale de données.
+                    updateLobbyUI(data.lobbyData || data.lobby); 
                     break;
 
                 case 'LOBBY_LEFT':
-                    // Le serveur a confirmé la sortie
                     leaveLobby();
                     break;
                     
@@ -343,7 +317,6 @@
                     console.error(`[SERVER ERROR] ${data.content}`);
                     displayFeedback(data.content);
                     if (data.disconnect) {
-                        // En cas d'erreur critique (ex: salon plein/inexistant)
                         handleDisconnection();
                     }
                     break;
@@ -360,8 +333,6 @@
                     addMessage("Le jeu va commencer ! Préparation des rôles...", 'system-important');
                     // TODO: Passer à la vue de jeu
                     break;
-                
-                // ... autres actions du jeu (rôles, votes, etc.)
             }
         }
 
@@ -389,25 +360,51 @@
         }
 
         function updateLobbyUI(lobby) {
-            if (!lobby) return; // Sécurité au cas où la mise à jour est vide
+            if (!lobby || !lobby.players) {
+                // S'assurer que lobby.players existe avant de continuer
+                console.error("[LOBBY_UPDATE_ERROR] Les données de lobby sont incomplètes ou 'players' est manquant.", lobby);
+                return; 
+            }
             
             lobbyData = lobby;
             lobbyCodeDisplay.textContent = lobby.code;
-            document.getElementById('player-count').textContent = lobby.clients.length;
+            
+            // CORRECTION: Utiliser lobby.players.length au lieu de lobby.clients.length
+            document.getElementById('player-count').textContent = lobby.players.length; 
+            
+            // --- LOGIQUE HÔTE / BOUTON DÉMARRER ---
+            const isHost = userId === lobby.hostId;
+            // CORRECTION: Utiliser lobby.players.length
+            const canStart = lobby.players.length >= MIN_PLAYERS;
+
+            // LOG DE DÉBOGAGE CRITIQUE : Vérifier les IDs ici
+            console.log(`[LOBBY_UPDATE] Mon ID: ${userId}, Hôte ID: ${lobby.hostId}, Suis-je Hôte? ${isHost}`); 
+
+            if (isHost) {
+                hostBadge.classList.remove('hidden');
+                startGameBtn.classList.remove('hidden'); // Rendre visible
+                startGameBtn.disabled = !canStart; // Activer si assez de joueurs
+                console.log(`[LOBBY_UPDATE] Hôte UI: Bouton visible et désactivé: ${!canStart}`);
+            } else {
+                hostBadge.classList.add('hidden');
+                startGameBtn.classList.add('hidden'); // Rendre invisible
+            }
+            // ----------------------------------------
             
             // Mise à jour de la liste des joueurs
             playersList.innerHTML = '';
-            lobby.clients.forEach(client => {
-                const isHost = client.id === lobby.hostId;
-                const isMe = client.id === userId;
+            // CORRECTION: Itérer sur lobby.players
+            lobby.players.forEach(player => {
+                const isHostClient = player.id === lobby.hostId;
+                const isMe = player.id === userId;
                 const li = document.createElement('li');
                 li.className = 'flex items-center space-x-2';
                 
-                let text = client.nickname;
+                let text = player.nickname;
                 if (isMe) {
                     text += " (Moi)";
                 }
-                if (isHost) {
+                if (isHostClient) {
                     text += " 🔥"; // Indicateur hôte
                 }
                 
@@ -415,22 +412,6 @@
                 playersList.appendChild(li);
             });
             
-            // Gestion du badge Hôte et du bouton Démarrer
-            const isHost = userId === lobby.hostId;
-            const canStart = lobby.clients.length >= MIN_PLAYERS;
-
-            if (isHost) {
-                // Si l'utilisateur est l'hôte
-                hostBadge.classList.remove('hidden');
-                startGameBtn.classList.remove('hidden'); // Le bouton doit être visible
-                startGameBtn.disabled = !canStart; // L'état désactivé dépend du nombre de joueurs
-            } else {
-                // Si l'utilisateur est un invité
-                hostBadge.classList.add('hidden');
-                startGameBtn.classList.add('hidden'); // Le bouton doit être masqué
-            }
-            
-            // S'assurer que le gain d'énergie est actif une fois dans le lobby
             startEnergyGain();
         }
 
@@ -583,7 +564,7 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
+            stopEnergyGain(); 
             navigate('home');
             clearMessage();
         }
