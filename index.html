@@ -91,7 +91,7 @@
                 </ul>
             </div>
             
-            <!-- Bouton Démarrer Jeu (visible uniquement par l'hôte) -->
+            <!-- Bouton Démarrer Jeu (RESTAURÉ) -->
             <button id="start-game-btn" disabled
                     class="w-full p-3 bg-red-600 text-white font-semibold rounded-lg shadow hover:bg-red-700 transition duration-150 disabled:bg-red-300 mb-4 hidden">
                 Démarrer le Jeu (Min 4 joueurs)
@@ -318,20 +318,19 @@
                     console.log(`[NAV] Succès: Tentative de navigation vers 'lobby'. Données reçues:`, data); // LOG DE DÉBOGAGE
                     
                     // Actions communes lors de la réussite d'une connexion
+                    // On suppose que data.code et data.userId sont toujours présents.
                     currentRoomCode = data.code;
-                    userId = data.userId;
-                    // Note: Le nickname est déjà mis à jour au moment du clic sur 'Créer'/'Rejoindre'
+                    userId = data.userId; 
                     nickname = localStorage.getItem('lastNickname'); 
                     localStorage.setItem('currentRoomCode', currentRoomCode);
                     
                     displayFeedback(`Connecté au salon ${currentRoomCode}.`, 'green');
-                    // updateLobbyUI(data.lobby); // CORRECTION 1: Retiré car le serveur n'envoie pas data.lobby ici et cela causait un crash. 
-                    // Nous nous fions à LOBBY_UPDATE qui est envoyé juste après.
+                    // Nous naviguons ici, puis attendons LOBBY_UPDATE pour remplir l'UI.
                     navigate('lobby');
                     break;
                 
                 case 'LOBBY_UPDATE':
-                    // CORRECTION 2: Le serveur envoie 'lobbyData', nous acceptons 'lobbyData' ou 'lobby'.
+                    // On accepte data.lobby (préféré) ou data.lobbyData (observé dans l'erreur)
                     updateLobbyUI(data.lobbyData || data.lobby);
                     break;
 
@@ -390,6 +389,8 @@
         }
 
         function updateLobbyUI(lobby) {
+            if (!lobby) return; // Sécurité au cas où la mise à jour est vide
+            
             lobbyData = lobby;
             lobbyCodeDisplay.textContent = lobby.code;
             document.getElementById('player-count').textContent = lobby.clients.length;
@@ -418,14 +419,14 @@
             const isHost = userId === lobby.hostId;
             if (isHost) {
                 hostBadge.classList.remove('hidden');
-                startGameBtn.classList.remove('hidden');
+                startGameBtn.classList.remove('hidden'); // RESTAURÉ: S'assurer qu'il est visible pour l'hôte
                 
                 // Mettre à jour l'état du bouton Démarrer
                 const canStart = lobby.clients.length >= MIN_PLAYERS;
                 startGameBtn.disabled = !canStart;
             } else {
                 hostBadge.classList.add('hidden');
-                startGameBtn.classList.add('hidden');
+                startGameBtn.classList.add('hidden'); // S'assurer qu'il est caché pour les invités
             }
             
             // S'assurer que le gain d'énergie est actif une fois dans le lobby
