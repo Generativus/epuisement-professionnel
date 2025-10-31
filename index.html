@@ -123,10 +123,11 @@
 
         <!-- Écran de Chat (Lobby/Jeu) -->
         <!-- Flexbox principal qui permet au conteneur de messages de s'ajuster -->
+        <!-- Le parent (app-container) a une hauteur fixe et est flex-col. chat-screen remplit cet espace. -->
         <div id="chat-screen" class="hidden flex-col flex-grow h-full">
             
-            <!-- Barre de menu du jeu/lobby (Hauteur fixe) -->
-            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg flex-shrink-0">
+            <!-- Barre de menu du jeu/lobby (Hauteur fixe - flex-shrink-0) -->
+            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg flex-shrink-0 w-full">
                 <div class="flex items-center space-x-4 mb-2 sm:mb-0 w-full sm:w-auto justify-between">
                     <h2 class="text-lg font-bold">Salon <span id="current-room-code" class="ml-1 bg-blue-600 text-white text-sm font-mono tracking-widest px-2 py-0.5 rounded"></span></h2>
                     
@@ -155,21 +156,22 @@
                 </div>
             </header>
 
-            <!-- Affichage de l'état du jeu et du timer (Hauteur fixe) -->
-            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 flex-shrink-0 hidden">
+            <!-- Affichage de l'état du jeu et du timer (Hauteur fixe - flex-shrink-0) -->
+            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 flex-shrink-0 hidden w-full">
                 <p id="game-status-text">
                     <span id="timer-display" class="text-xl text-red-600 font-extrabold font-mono">15:00</span> - Débat en cours
                 </p>
             </div>
 
 
-            <!-- Zone d'affichage des messages (Zone de taille flexible et scrollable) -->
+            <!-- Zone d'affichage des messages (Zone flexible et scrollable) -->
+            <!-- flex-grow force cet élément à prendre tout l'espace restant. overflow-y-auto le rend scrollable. -->
             <div id="messages-container" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar bg-white min-h-0">
                 <!-- Les messages seront insérés ici par JavaScript -->
             </div>
 
-            <!-- Zone de saisie de message (Hauteur fixe) -->
-            <footer class="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+            <!-- Zone de saisie de message (Hauteur fixe - flex-shrink-0) -->
+            <footer class="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 w-full">
                 <div class="flex space-x-3">
                     <input id="message-input" type="text" placeholder="Écrivez un message..."
                            class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
@@ -712,7 +714,7 @@
             currentRoomCode = null;
             lobbyData = {};
             stopTimer(); 
-            stopEnergyGain(); // CORRECTION 2: S'assurer que le gain d'énergie s'arrête en quittant
+            stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
             navigate('home');
             clearMessage();
         }
