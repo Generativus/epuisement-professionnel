@@ -12,540 +12,547 @@
             font-family: 'Inter', sans-serif;
         }
 
-        /* CRUCIAL: Utiliser 100vh ou -webkit-fill-available pour optimiser l'affichage sur mobile (incluant la barre d'adresse) */
-        /* Note: L'utilisation de h-screen (100vh) est le meilleur compromis, 
-           mais peut être ajusté par des navigateurs mobiles pour tenir compte de la barre d'adresse. 
-           L'ajout de 'min-h-screen' assure la couverture. */
+        /* FLEXBOX CRUCIAL pour l'optimisation mobile/clavier */
+        /* Le corps prend la hauteur de l'écran visible */
         body {
-            background-color: #f7f7f7;
-            /* Laissé body en layout simple, le conteneur d'app gère le flex */
-        }
-        
-        /* Conteneur principal de l'application */
-        #app-container {
-            /* Fixer la hauteur pour utiliser l'espace visible complet */
             min-height: 100vh;
-            height: 100vh; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0; /* Retirer le padding du body global */
+            background-color: #1f2937; /* Fond sombre pour le corps */
+        }
+        
+        /* Le conteneur d'application prend la hauteur totale de l'écran ou une taille maximale sur desktop */
+        #app-container {
+            height: 100vh; /* Permet au Flexbox de fonctionner en pleine hauteur */
+            max-height: 100vh; /* S'assure qu'il ne dépasse pas sur mobile */
             width: 100%;
-            max-width: 6xl; 
-            margin: 0 auto;
-            /* Flex Column pour empiler Header/Content/Footer */
+            max-width: 6xl; /* Taille maximale pour desktop */
+            margin: 0 auto; /* Centrage pour les grands écrans */
+            border-radius: 0; 
+            /* AJOUT CLÉ 1: Conteneur Flexbox vertical principal */
             display: flex;
-            flex-direction: column;
-            
-            /* S'assurer que les bords ne sont pas coupés */
-            overflow: hidden; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+            flex-direction: column; 
+            background-color: #f3f4f6; /* Fond clair pour l'application */
         }
 
-        /* Conteneur des messages - DOIT prendre l'espace restant et défiler */
-        #messages-container-wrapper {
-            flex-grow: 1; /* Prend tout l'espace vertical disponible */
-            overflow-y: auto; /* Permet le défilement vertical */
-            -webkit-overflow-scrolling: touch; /* Améliore le défilement sur iOS */
-            padding-bottom: 0.5rem; /* Espace avant le footer */
+        /* Masquage/Affichage des écrans */
+        .screen {
+            display: none;
         }
 
-        /* Styles pour les messages */
-        .message-row {
-            padding: 0.5rem 1rem;
-            display: flex;
-            align-items: flex-start;
+        .screen.active {
+            display: flex; /* Utiliser flex pour tous les écrans actifs pour gérer la mise en page */
         }
 
-        .message-content {
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            word-wrap: break-word; /* Important pour les longs messages */
-            max-width: 90%;
-        }
-        
-        /* Message de l'utilisateur actuel */
-        .message-self .message-content {
-            background-color: #3b82f6; /* Bleu (blue-500) */
-            color: white;
-            border-bottom-right-radius: 0;
-            margin-left: auto;
-        }
-        
-        /* Message d'un autre utilisateur */
-        .message-other .message-content {
-            background-color: #e5e7eb; /* Gris clair (gray-200) */
-            color: #1f2937; /* Gris foncé */
-            border-bottom-left-radius: 0;
-        }
-        
-        /* Message système */
-        .message-system .message-content {
-            background-color: #fca5a5; /* Rouge clair (red-300) */
-            color: #7f1d1d; /* Rouge foncé (red-900) */
+        /* Style pour les messages du chat */
+        .system-message {
+            font-style: italic;
+            color: #4b5563;
             text-align: center;
-            width: 100%;
-            margin-left: auto;
-            margin-right: auto;
+        }
+        .user-message-self {
+            background-color: #3b82f6; /* Bleu */
+            color: white;
+            align-self: flex-end;
+            border-radius: 1rem 1rem 0 1rem;
+            max-width: 80%;
+            padding: 0.5rem 1rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .user-message-other {
+            background-color: #ffffff; /* Blanc */
+            color: #1f2937;
+            align-self: flex-start;
+            border-radius: 1rem 1rem 1rem 0;
+            max-width: 80%;
+            padding: 0.5rem 1rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+        .message-nickname {
+            font-weight: bold;
+            font-size: 0.75rem; /* text-xs */
+            color: #6b7280;
+            margin-bottom: 0.25rem;
+        }
+
+        /* Animations pour les transitions d'écran (optionnel) */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .active {
+            animation: fadeIn 0.3s ease-in-out;
         }
     </style>
 </head>
 <body>
-    
-    <!-- Conteneur principal: Flex Column pour une gestion de la hauteur de l'écran (Header/Content/Footer) -->
-    <div id="app-container" class="bg-gray-50 max-w-lg mx-auto">
-        
-        <!-- Header de l'application (Barre d'information fixe) -->
-        <header id="info-bar" class="bg-white shadow-lg p-3 flex justify-between items-center z-10 sticky top-0">
-            <h1 id="lobby-title" class="text-xl font-bold text-gray-800 truncate mr-2">Salon: --</h1>
-            <div class="flex items-center space-x-3">
-                <span id="player-count" class="text-gray-600 font-medium bg-gray-200 py-1 px-3 rounded-full text-sm">0/10</span>
-                <button id="leave-lobby-btn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-3 rounded-full shadow transition duration-150 ease-in-out text-sm">
-                    Quitter
+    <div id="app-container" class="w-full h-full max-w-lg mx-auto bg-white shadow-xl rounded-lg">
+
+        <!-- Écran d'Accueil -->
+        <div id="home-screen" class="screen active p-8 flex flex-col items-center justify-center h-full">
+            <h1 class="text-3xl font-extrabold text-gray-900 mb-6">Jeu de Déduction Sociale</h1>
+            
+            <input type="text" id="nickname-input" placeholder="Votre Pseudo" class="w-full p-3 mb-4 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-blue-500 transition duration-150">
+            
+            <div class="w-full space-y-3">
+                <button id="create-lobby-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01]">
+                    Créer un Salon
                 </button>
-            </div>
-        </header>
 
-        <!-- Conteneur de Navigation (invisible par défaut, seulement pour l'initialisation) -->
-        <!-- La logique de navigation n'est pas modifiée, mais le conteneur principal reste visible -->
-        <div id="navigation-container" class="flex-grow overflow-auto hidden">
-            <!-- Contenu de la page Home/Lobby/Game -->
-            
-            <!-- Page Home (Laisser la structure minimale pour que la logique de navigation fonctionne) -->
-            <div id="page-home" class="p-4 space-y-4">
-                <div class="bg-white p-6 rounded-xl shadow">
-                    <h2 class="text-2xl font-semibold mb-4 text-center text-gray-800">Bienvenue</h2>
-                    <input type="text" id="nickname-input" placeholder="Votre pseudonyme" class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                    <button id="save-nickname-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-150 ease-in-out mb-4">Sauvegarder le Pseudo</button>
-
-                    <div class="flex space-x-2">
-                        <input type="text" id="room-code-input" placeholder="Code du salon" class="flex-grow p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                        <button id="join-lobby-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-150 ease-in-out">Rejoindre</button>
-                    </div>
-                    <button id="create-lobby-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 rounded-lg shadow-md mt-4 transition duration-150 ease-in-out">Créer un Salon</button>
-                </div>
-                
-                <div id="status-message" class="text-center text-sm font-medium text-red-500 mt-4 h-5"></div>
-            </div>
-            
-            <!-- Page Game (Placeholder pour la logique de jeu) -->
-            <div id="page-game" class="p-4 space-y-4 hidden">
-                <h2 class="text-2xl font-semibold text-gray-800">Phase de Jeu</h2>
-                <div id="game-info" class="bg-yellow-100 p-4 rounded-lg border border-yellow-300 text-yellow-800">
-                    <p>Le jeu est en cours. Vos actions et rôles seront affichés ici.</p>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="join-code-input" placeholder="Code du Salon (5 chiffres)" maxlength="5" class="flex-grow p-3 border-2 border-gray-300 rounded-lg text-center tracking-widest uppercase transition duration-150">
+                    <button id="join-lobby-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01]">
+                        Rejoindre
+                    </button>
                 </div>
             </div>
+            
+            <p id="error-message" class="text-red-500 mt-4 h-6 text-sm"></p>
         </div>
 
-
-        <!-- Conteneur des Messages du Chat (Prend l'espace restant et DÉFILE) -->
-        <!-- Ce wrapper gère le défilement pour laisser le header/footer visibles -->
-        <div id="messages-container-wrapper">
-             <div id="messages-container" class="min-h-full">
-                <!-- Les messages seront ajoutés ici par le JavaScript -->
-             </div>
-        </div>
-
-        
-        <!-- Footer de l'application (Zone de saisie de texte fixe) -->
-        <footer id="chat-input-bar" class="bg-white p-3 border-t border-gray-200 z-10 sticky bottom-0">
-            <div class="flex items-center space-x-2">
-                <input type="text" id="message-input" placeholder="Écrivez un message (max 200 caractères)" maxlength="200" 
-                       class="flex-grow p-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 transition">
-                <button id="send-message-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold p-3 rounded-full shadow-md transition duration-150 ease-in-out flex-shrink-0">
-                    <!-- Icône d'envoi -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" transform="rotate(90 12 12) translate(0 24) scale(1 -1) translate(0 -24)"/>
+        <!-- Écran de Lobby -->
+        <div id="lobby-screen" class="screen w-full h-full flex flex-col p-4 bg-gray-50">
+            
+            <!-- 1. En-tête / Informations du Lobby (Fixe en haut) -->
+            <div id="lobby-info" class="w-full p-3 bg-white border-b border-gray-200 shadow-sm rounded-lg mb-4 flex-shrink-0">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-gray-800">Salon #<span id="lobby-code-display"></span></h2>
+                    <span id="player-count" class="text-lg font-semibold text-blue-600">Joueurs: 0</span>
+                </div>
+                <p id="host-info" class="text-sm text-gray-500">Hôte: <span id="host-name-display"></span></p>
+                <div id="game-status-info" class="mt-2 text-sm text-gray-700">
+                    Statut: <span id="status-display" class="font-medium">EN ATTENTE</span>
+                </div>
+                <!-- Boutons d'Action Hôte/Joueur -->
+                <div class="mt-3 flex justify-end space-x-3">
+                    <button id="leave-lobby-btn" class="text-sm bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
+                        Quitter
+                    </button>
+                    <button id="start-game-btn" class="hidden text-sm bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
+                        Démarrer le Jeu
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 2. Conteneur des Messages (Doit défiler) -->
+            <!-- AJOUT CLÉ 2: flex-grow pour prendre l'espace, overflow-y-auto pour le défilement -->
+            <div id="messages-container" class="flex-grow w-full overflow-y-auto bg-white p-3 rounded-lg shadow-inner space-y-2 border border-gray-200">
+                <!-- Les messages seront ajoutés ici par JavaScript -->
+            </div>
+            
+            <!-- 3. Zone de Saisie de Message (Fixe en bas) -->
+            <!-- AJOUT CLÉ 3: flex-shrink-0 pour rester en bas, mt-4 pour l'espacement avec le chat -->
+            <div id="message-input-area" class="w-full mt-4 flex space-x-2 flex-shrink-0">
+                <textarea id="message-input" rows="1" placeholder="Tapez votre message..." 
+                          class="flex-grow p-3 border-2 border-gray-300 rounded-full resize-none focus:border-blue-500 focus:ring-blue-500 transition duration-150"></textarea>
+                <button id="send-message-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition duration-150 transform hover:scale-[1.05]">
+                    <!-- Icône d'envoi SVG -->
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 transform rotate-90 translate-y-[-1px] translate-x-[1px]">
+                        <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.599 60.599 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.599 60.599 0 0 0 3.478 2.405Z" />
                     </svg>
                 </button>
             </div>
-        </footer>
 
-        <!-- Modal de Confirmation (Utilisé à la place d'alert/confirm) -->
-        <div id="confirmation-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
-                <p id="modal-message" class="text-gray-700 mb-6 text-center"></p>
-                <div class="flex justify-around space-x-4">
-                    <button id="confirm-yes" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg transition duration-150">Oui</button>
-                    <button id="confirm-no" class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 rounded-lg transition duration-150">Non</button>
+        </div>
+        
+        <!-- Écran du Jeu (à implémenter) -->
+        <div id="game-screen" class="screen p-4 flex flex-col items-center justify-center h-full">
+            <h1 class="text-3xl font-extrabold text-gray-900">Écran du Jeu</h1>
+            <p class="mt-4 text-gray-600">Le jeu est en cours. Vos actions et informations de rôle seront affichées ici.</p>
+        </div>
+
+        <!-- Modale de Confirmation (Invisible par défaut) -->
+        <div id="confirmation-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white rounded-lg p-6 max-w-sm w-full shadow-2xl">
+                <p id="confirmation-message" class="text-lg font-medium text-gray-800 mb-4">Êtes-vous sûr ?</p>
+                <div class="flex justify-end space-x-3">
+                    <button id="confirm-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-150">
+                        Annuler
+                    </button>
+                    <button id="confirm-ok-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
+                        Confirmer
+                    </button>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <!-- Script JavaScript pour la logique WebSocket et Chat -->
     <script type="module">
-        // Importation des fonctions utilitaires Firebase (non utilisées ici, mais conservées pour la compatibilité du template)
-        // const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
-        // const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
-        // const { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, addDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
-        
         // --- Variables Globales ---
         let ws;
-        let nickname = '';
+        let currentScreen = 'home';
         let currentRoomCode = null;
         let lobbyData = {};
+        let userId = null; // ID unique du client
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        let confirmationCallback = null;
         
-        // Constantes du jeu (pour référence, la logique principale est sur le serveur)
-        const GAME_STATUS = {
-            WAITING: 'WAITING',
-            STARTED: 'STARTED',
-            VOTING: 'VOTING',
-            ENDED: 'ENDED'
-        };
+        // PARAMÈTRE DE CONNEXION FIXE
+        // URL du serveur WebSocket (WSS) extraite de l'URL Render fournie.
+        const WEBSOCKET_SERVER_URL = "wss://webrtc-epuisement-professionnel.onrender.com";
 
-        // Configuration du serveur Render (URL fournie par l'utilisateur)
-        // Utiliser ws:// pour http et wss:// pour https
-        const RENDER_URL = "webrtc-epuisement-professionnel.onrender.com";
-        const WS_URL = window.location.protocol === 'https:' ? `wss://${RENDER_URL}` : `ws://${RENDER_URL}`;
 
-        // --- Éléments du DOM ---
+        // Éléments du DOM (mis en cache pour une utilisation facile)
         const appContainer = document.getElementById('app-container');
-        const navigationContainer = document.getElementById('navigation-container');
-        const pageHome = document.getElementById('page-home');
-        const pageGame = document.getElementById('page-game');
-        const messagesContainerWrapper = document.getElementById('messages-container-wrapper');
+        const homeScreen = document.getElementById('home-screen');
+        const lobbyScreen = document.getElementById('lobby-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const nicknameInput = document.getElementById('nickname-input');
+        const joinCodeInput = document.getElementById('join-code-input');
+        const createLobbyBtn = document.getElementById('create-lobby-btn');
+        const joinLobbyBtn = document.getElementById('join-lobby-btn');
+        const errorMessage = document.getElementById('error-message');
+        const lobbyCodeDisplay = document.getElementById('lobby-code-display');
+        const hostNameDisplay = document.getElementById('host-name-display');
+        const playerCount = document.getElementById('player-count');
+        const statusDisplay = document.getElementById('status-display');
+        const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+        const startGameBtn = document.getElementById('start-game-btn');
         const messagesContainer = document.getElementById('messages-container');
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
-        const nicknameInput = document.getElementById('nickname-input');
-        const saveNicknameBtn = document.getElementById('save-nickname-btn');
-        const roomCodeInput = document.getElementById('room-code-input');
-        const joinLobbyBtn = document.getElementById('join-lobby-btn');
-        const createLobbyBtn = document.getElementById('create-lobby-btn');
-        const lobbyTitle = document.getElementById('lobby-title');
-        const playerCountSpan = document.getElementById('player-count');
-        const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
-        const statusMessage = document.getElementById('status-message');
-        const chatInputBar = document.getElementById('chat-input-bar');
-        const infoBar = document.getElementById('info-bar');
-        
-        // Modal de confirmation
         const confirmationModal = document.getElementById('confirmation-modal');
-        const modalMessage = document.getElementById('modal-message');
-        const confirmYes = document.getElementById('confirm-yes');
-        const confirmNo = document.getElementById('confirm-no');
-        let confirmationCallback = null;
+        const confirmationMessage = document.getElementById('confirmation-message');
+        const confirmOkBtn = document.getElementById('confirm-ok-btn');
+        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
 
-        // --- Logique d'affichage (Navigation et État) ---
+        // Variables de Jeu/Énergie (pour la simulation)
+        let energy = 10; // Énergie de départ
+        let maxEnergy = 10; 
+        let energyGainInterval = null;
 
-        /**
-         * Navigue entre les vues principales (home, lobby, game)
-         * La page "lobby" utilise le conteneur principal de l'app pour le chat.
-         * @param {string} view 'home', 'lobby', 'game'
-         */
-        function navigate(view) {
-            // Cacher toutes les vues de navigation et afficher/cacher les barres
-            pageHome.classList.add('hidden');
-            pageGame.classList.add('hidden');
-            messagesContainerWrapper.classList.add('hidden');
-            chatInputBar.classList.add('hidden');
-            infoBar.classList.add('hidden');
-            navigationContainer.classList.add('hidden');
-            
-            // Afficher la vue appropriée
-            if (view === 'home') {
-                navigationContainer.classList.remove('hidden');
-                pageHome.classList.remove('hidden');
-            } else if (view === 'lobby') {
-                // Afficher le chat
-                messagesContainerWrapper.classList.remove('hidden');
-                chatInputBar.classList.remove('hidden');
-                infoBar.classList.remove('hidden');
-                // S'assurer que le titre est visible dans le lobby
-                lobbyTitle.textContent = `Salon: ${currentRoomCode || '--'}`;
-                scrollToBottom();
-            } else if (view === 'game') {
-                navigationContainer.classList.remove('hidden');
-                pageGame.classList.remove('hidden');
-                infoBar.classList.remove('hidden'); // Le Header reste
+        // --- Fonctions d'Utilité ---
+
+        /** Navigation entre les écrans */
+        function navigate(screenId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+                screen.classList.add('hidden');
+            });
+            const targetScreen = document.getElementById(`${screenId}-screen`);
+            if (targetScreen) {
+                targetScreen.classList.remove('hidden');
+                targetScreen.classList.add('active');
+                currentScreen = screenId;
+                // Ajustement pour le mobile : assure le focus sur l'entrée du chat si c'est l'écran du lobby
+                if (screenId === 'lobby') {
+                    // Petite astuce pour s'assurer que le navigateur comprend la nouvelle disposition
+                    setTimeout(() => messagesContainer.scrollTop = messagesContainer.scrollHeight, 100);
+                }
+            }
+            clearMessage();
+        }
+
+        /** Génère un ID utilisateur unique ou le récupère depuis le stockage local */
+        function initPersistance() {
+            let storedId = localStorage.getItem('userId');
+            if (!storedId) {
+                storedId = crypto.randomUUID();
+                localStorage.setItem('userId', storedId);
+            }
+            userId = storedId;
+            // Récupérer le dernier pseudo utilisé
+            const storedNickname = localStorage.getItem('nickname');
+            if (storedNickname) {
+                nicknameInput.value = storedNickname;
             }
         }
 
-        /** Affiche un message d'état temporaire */
-        function displayStatus(message, isError = false) {
-            statusMessage.textContent = message;
-            statusMessage.className = isError 
-                ? 'text-center text-sm font-medium text-red-500 mt-4 h-5' 
-                : 'text-center text-sm font-medium text-green-500 mt-4 h-5';
-            
+        /** Affiche un message d'erreur temporaire */
+        function displayError(message) {
+            errorMessage.textContent = message;
             setTimeout(() => {
-                statusMessage.textContent = '';
-                statusMessage.className = 'h-5'; // Conserver la hauteur
+                errorMessage.textContent = '';
             }, 5000);
         }
 
-        /** Affiche un modal de confirmation à la place de window.confirm() */
-        function showConfirmation(message, onConfirm) {
-            modalMessage.textContent = message;
-            confirmationCallback = onConfirm;
-            confirmationModal.classList.remove('hidden');
+        /** Réinitialise l'affichage des messages */
+        function clearMessage() {
+             errorMessage.textContent = '';
         }
 
-        // Gestionnaire pour le modal de confirmation
-        confirmYes.onclick = () => {
+        /** Convertit l'heure en format lisible HH:MM */
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        /** Ajoute un message au conteneur de messages et fait défiler vers le bas */
+        function addMessage(msg) {
+            const isSystem = msg.action === 'SYSTEM_MESSAGE';
+            const isSelf = msg.senderId === userId;
+            const msgElement = document.createElement('div');
+            
+            // Conteneur de message
+            msgElement.className = `flex ${isSelf ? 'justify-end' : 'justify-start'} w-full`;
+            
+            // Contenu du message
+            const contentElement = document.createElement('div');
+            contentElement.className = isSystem 
+                ? 'system-message text-sm w-full' 
+                : isSelf 
+                    ? 'user-message-self' 
+                    : 'user-message-other';
+            
+            if (isSystem) {
+                contentElement.innerHTML = `[${formatTime(msg.timestamp)}] ${msg.content}`;
+            } else {
+                // Afficher le pseudo de l'autre utilisateur
+                if (!isSelf) {
+                    const nicknameElement = document.createElement('div');
+                    nicknameElement.className = 'message-nickname';
+                    nicknameElement.textContent = msg.nickname;
+                    contentElement.appendChild(nicknameElement);
+                }
+                
+                // Contenu principal du message
+                const textElement = document.createElement('p');
+                textElement.textContent = msg.content;
+                contentElement.appendChild(textElement);
+
+                // Horodatage dans le message
+                const timeElement = document.createElement('span');
+                timeElement.className = 'block text-right mt-1 text-xs opacity-70';
+                timeElement.textContent = formatTime(msg.timestamp);
+                contentElement.appendChild(timeElement);
+            }
+
+            msgElement.appendChild(contentElement);
+            messagesContainer.appendChild(msgElement);
+
+            // Défiler vers le bas (le plus important pour le chat)
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        /** Affiche une modale de confirmation */
+        function showConfirmation(message, onConfirm) {
+            confirmationMessage.textContent = message;
+            confirmationModal.classList.remove('hidden', 'fade-out');
+            confirmationModal.classList.add('flex', 'fade-in');
+            confirmationCallback = onConfirm;
+        }
+        
+        /** Gère la confirmation de la modale */
+        confirmOkBtn.addEventListener('click', () => {
             if (confirmationCallback) {
                 confirmationCallback();
             }
-            confirmationModal.classList.add('hidden');
+            confirmationModal.classList.remove('flex', 'fade-in');
+            confirmationModal.classList.add('hidden', 'fade-out');
             confirmationCallback = null;
-        };
+        });
 
-        confirmNo.onclick = () => {
-            confirmationModal.classList.add('hidden');
+        /** Gère l'annulation de la modale */
+        confirmCancelBtn.addEventListener('click', () => {
+            confirmationModal.classList.remove('flex', 'fade-in');
+            confirmationModal.classList.add('hidden', 'fade-out');
             confirmationCallback = null;
-        };
+        });
 
 
-        // --- Logique de Persistance (Stockage Local) ---
-        function initPersistance() {
-            const savedNickname = localStorage.getItem('nickname');
-            if (savedNickname) {
-                nickname = savedNickname;
-                nicknameInput.value = savedNickname;
-                displayStatus(`Pseudonyme chargé: ${nickname}`);
-            } else {
-                displayStatus("Veuillez entrer un pseudonyme.", true);
-            }
-            navigate('home');
+        // --- Gestion de l'Énergie (pour la simulation) ---
+
+        function startEnergyGain() {
+            if (energyGainInterval) clearInterval(energyGainInterval);
+            // Simule l'obtention d'un point d'énergie toutes les 10 secondes
+            energyGainInterval = setInterval(() => {
+                if (energy < maxEnergy) {
+                    energy++;
+                    // Mettre à jour l'affichage de l'énergie (TODO: à ajouter dans l'UI)
+                    console.log(`Énergie +1. Total: ${energy}`);
+                }
+            }, 10000); 
         }
 
-        saveNicknameBtn.addEventListener('click', () => {
-            const newNickname = nicknameInput.value.trim();
-            if (newNickname.length > 0 && newNickname.length <= 15) {
-                nickname = newNickname;
-                localStorage.setItem('nickname', nickname);
-                displayStatus(`Pseudonyme sauvegardé: ${nickname}`);
-            } else {
-                displayStatus("Le pseudonyme doit faire entre 1 et 15 caractères.", true);
+        function stopEnergyGain() {
+            if (energyGainInterval) {
+                clearInterval(energyGainInterval);
+                energyGainInterval = null;
             }
-        });
-        
-        // --- Logique WebSocket ---
+        }
+
+        // --- Fonctions de WebSocket et API ---
+
+        /** Initialisation de la connexion WebSocket */
         function initWebSocket() {
-            ws = new WebSocket(WS_URL);
+            // Utilisation de l'URL de serveur fixe fournie
+            const wsUrl = WEBSOCKET_SERVER_URL; 
+
+            try {
+                ws = new WebSocket(wsUrl);
+            } catch (e) {
+                console.error("Erreur de création de WebSocket, URL invalide:", wsUrl, e);
+                displayError("Erreur de connexion (URL invalide). Veuillez vérifier le protocole.");
+                return; // Arrêter si la création échoue
+            }
+            
 
             ws.onopen = () => {
                 console.log('Connecté au serveur WebSocket.');
-                clearMessage();
-                displayStatus("Connecté au serveur.");
+                reconnectAttempts = 0; // Réinitialiser les tentatives de reconnexion
+                
+                // Si l'utilisateur est dans un salon, tenter de s'y reconnecter (pour les déconnexions courtes)
+                if (currentRoomCode) {
+                    sendToServer({
+                        action: 'REJOIN_LOBBY',
+                        code: currentRoomCode,
+                        nickname: localStorage.getItem('nickname'),
+                        userId: userId
+                    });
+                }
             };
 
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    handleMessage(data);
-                } catch (error) {
-                    console.error('Erreur lors du parsing du message:', error, event.data);
+                    handleServerMessage(data);
+                } catch (e) {
+                    console.error('Erreur de parsing du message:', e, event.data);
                 }
             };
 
             ws.onclose = (event) => {
-                console.log('Déconnecté du serveur WebSocket.', event.code, event.reason);
-                clearMessage();
-                displayStatus(`Déconnecté du serveur. Code: ${event.code}`, true);
-                // Si l'on est dans un lobby, revenir à l'accueil
-                if (currentRoomCode) {
-                    messagesContainer.innerHTML = '';
-                    currentRoomCode = null;
-                    lobbyData = {};
-                    stopTimer(); 
-                    stopEnergyGain();
-                    navigate('home');
-                }
+                console.log('Déconnecté du serveur WebSocket.', event);
                 
-                // Tentative de reconnexion après un court délai
-                setTimeout(initWebSocket, 5000);
+                // Tenter de se reconnecter
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts++;
+                    console.log(`Tentative de reconnexion dans ${2 ** reconnectAttempts} secondes... (Tentative ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    setTimeout(initWebSocket, (2 ** reconnectAttempts) * 1000);
+                } else {
+                    displayError('Connexion perdue. Veuillez recharger la page.');
+                    leaveLobby(); // Revenir à l'écran d'accueil
+                }
             };
 
             ws.onerror = (error) => {
                 console.error('Erreur WebSocket:', error);
-                displayStatus('Erreur de connexion WebSocket.', true);
+                // L'erreur sera suivie d'un événement de fermeture, donc pas besoin de naviguer ici.
             };
         }
 
-        function sendToServer(data) {
+        /** Envoie un message au serveur (avec vérification de l'état) */
+        function sendToServer(message) {
             if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(data));
+                message.userId = userId; // Ajouter l'ID utilisateur à tous les messages sortants
+                ws.send(JSON.stringify(message));
             } else {
-                console.error('WebSocket non connecté ou en cours de fermeture.');
-                displayStatus('Erreur: Connexion au serveur perdue. Reconnexion en cours.', true);
+                console.error('WebSocket non connecté. Impossible d\'envoyer le message.', message);
+                displayError('Erreur de connexion. Tentative de reconnexion en cours...');
             }
         }
-        
-        function clearMessage() {
-            messagesContainer.innerHTML = ''; // Nettoyer les messages du chat
-        }
 
-        // --- Gestion des Messages du Serveur ---
-        function handleMessage(data) {
+        /** Gestion des messages reçus du serveur */
+        function handleServerMessage(data) {
             console.log('Message reçu:', data);
-            
-            switch (data.action) {
-                case 'ROOM_CREATED':
-                case 'ROOM_JOINED':
-                    currentRoomCode = data.code;
-                    lobbyData = data.lobbyData;
-                    displayStatus(data.message);
-                    lobbyTitle.textContent = `Salon: ${currentRoomCode}`;
-                    navigate('lobby');
-                    updateLobbyUI();
-                    break;
 
-                case 'ERROR':
-                    displayStatus(`Erreur: ${data.message}`, true);
+            switch (data.action) {
+                case 'LOBBY_CREATED':
+                case 'LOBBY_JOINED':
+                    currentRoomCode = data.code;
+                    localStorage.setItem('nickname', data.nickname); // Sauvegarder le pseudo
+                    lobbyCodeDisplay.textContent = data.code;
+                    addMessage({ action: 'SYSTEM_MESSAGE', content: `Vous avez rejoint le salon ${data.code} !`, timestamp: Date.now() });
+                    navigate('lobby');
+                    startEnergyGain();
                     break;
-                
+                case 'LOBBY_LEFT':
+                    // Le serveur a confirmé la sortie
+                    leaveLobby();
+                    break;
+                case 'LOBBY_UPDATE':
+                    lobbyData = data.lobby;
+                    updateLobbyUI(lobbyData);
+                    break;
+                case 'ERROR':
+                    displayError(`Erreur du serveur: ${data.content}`);
+                    break;
                 case 'MESSAGE':
                 case 'SYSTEM_MESSAGE':
                     addMessage(data);
                     break;
-
-                case 'LOBBY_UPDATE':
-                    lobbyData = data.lobbyData;
-                    updateLobbyUI();
+                // --- Gestion du Jeu ---
+                case 'GAME_STARTING':
+                    addMessage({ action: 'SYSTEM_MESSAGE', content: `Le jeu va commencer ! Distribution des rôles...`, timestamp: Date.now() });
+                    // TODO: Passer à l'écran de jeu ('game')
                     break;
-
-                case 'GAME_STATUS_UPDATE':
-                    lobbyData.gameStatus = data.gameStatus;
-                    updateLobbyUI(); // Met à jour le bouton Start/Leave si l'on veut ajouter plus de logique
-                    addMessage({
-                        action: 'SYSTEM_MESSAGE',
-                        content: `Le jeu est désormais en état: ${data.gameStatus}`
-                    });
-                    if (data.gameStatus === GAME_STATUS.STARTED) {
-                         // Démarrer la logique du jeu
-                         navigate('game');
-                    } else if (data.gameStatus === GAME_STATUS.WAITING || data.gameStatus === GAME_STATUS.ENDED) {
-                         navigate('lobby');
-                    }
-                    break;
-
-                case 'LOBBY_LEFT':
-                    leaveLobby();
-                    displayStatus('Vous avez quitté le salon.');
-                    break;
-                    
                 default:
-                    console.warn('Action inconnue reçue:', data.action);
+                    console.warn('Action inconnue du serveur:', data.action);
             }
         }
 
-        /** Met à jour l'interface utilisateur du lobby (compteur, statut du jeu, etc.) */
-        function updateLobbyUI() {
-            if (currentRoomCode && lobbyData.players) {
-                const playerCount = Object.keys(lobbyData.players).length;
-                playerCountSpan.textContent = `${playerCount}/${lobbyData.maxPlayers || 10}`;
-                
-                // Exemple de logique UI pour l'hôte:
-                // const isHost = lobbyData.hostId === ws.userId; // userId n'est pas utilisé dans cette version simplifiée, mais c'est la bonne approche.
-                // lobbyTitle.textContent = `Salon: ${currentRoomCode}${isHost ? ' (Hôte)' : ''}`;
+        /** Met à jour l'interface du lobby */
+        function updateLobbyUI(lobby) {
+            const isHost = lobby.hostId === userId;
+            const MIN_PLAYERS = 4; // Doit correspondre à la constante serveur
+            const isReadyToStart = lobby.clients.length >= MIN_PLAYERS && lobby.gameStatus === 'WAITING';
+
+            // Mettre à jour les infos principales
+            playerCount.textContent = `Joueurs: ${lobby.clients.length}`;
+            statusDisplay.textContent = lobby.gameStatus;
+            
+            // Afficher le nom de l'hôte (chercher dans la liste des joueurs)
+            const hostClient = lobby.clients.find(c => c.id === lobby.hostId);
+            hostNameDisplay.textContent = hostClient ? hostClient.nickname : 'Inconnu';
+
+            // Afficher/Masquer le bouton Démarrer le Jeu
+            if (isHost && isReadyToStart) { 
+                startGameBtn.classList.remove('hidden');
             } else {
-                playerCountSpan.textContent = '0/10';
+                startGameBtn.classList.add('hidden');
             }
         }
 
-        /** * Ajoute un message au conteneur de messages.
-         * @param {object} data - Contient content, action, (userId), (nickname)
-         */
-        function addMessage(data) {
-            const messageRow = document.createElement('div');
-            const messageContent = document.createElement('div');
-            
-            // Formater l'heure
-            const now = new Date();
-            const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-            messageRow.classList.add('message-row');
-            messageContent.classList.add('message-content');
-            
-            // Déterminer le type de message et le style
-            if (data.action === 'SYSTEM_MESSAGE') {
-                messageRow.classList.add('message-system', 'justify-center');
-                messageContent.classList.remove('message-content');
-                messageContent.classList.add('text-sm', 'italic', 'text-gray-500', 'text-center', 'w-full');
-                messageContent.textContent = data.content;
-            } else if (data.nickname === nickname) {
-                // Mon propre message
-                messageRow.classList.add('message-self', 'justify-end');
-                const timestampSpan = `<span class="text-xs text-gray-300 mr-2">${timeString}</span>`;
-                messageContent.innerHTML = `${data.content} ${timestampSpan}`;
-            } else {
-                // Message d'un autre joueur
-                messageRow.classList.add('message-other', 'justify-start');
-                const timestampSpan = `<span class="text-xs text-gray-500 ml-2">${timeString}</span>`;
-                const nicknameSpan = `<span class="font-bold mr-2">${data.nickname}:</span>`;
-                messageContent.innerHTML = `${nicknameSpan}${data.content}${timestampSpan}`;
-            }
-
-            messageRow.appendChild(messageContent);
-            messagesContainer.appendChild(messageRow);
-            
-            // Défilement automatique vers le bas
-            scrollToBottom();
-        }
-
-        /** Défile le conteneur de messages jusqu'en bas */
-        function scrollToBottom() {
-            // Utiliser le wrapper qui gère le défilement
-            messagesContainerWrapper.scrollTop = messagesContainerWrapper.scrollHeight;
-        }
-
-        // --- Logique du Lobby ---
-
-        joinLobbyBtn.addEventListener('click', () => {
-            const code = roomCodeInput.value.trim();
-            if (!code || code.length !== 5) {
-                displayStatus("Veuillez entrer un code de salon valide de 5 chiffres.", true);
-                return;
-            }
-            if (!nickname) {
-                displayStatus("Veuillez d'abord définir votre pseudonyme.", true);
-                return;
-            }
-            
-            sendToServer({
-                action: 'JOIN_LOBBY',
-                code: code,
-                nickname: nickname
-            });
-        });
+        // --- Événements d'Action ---
 
         createLobbyBtn.addEventListener('click', () => {
-            if (!nickname) {
-                displayStatus("Veuillez d'abord définir votre pseudonyme.", true);
+            const nickname = nicknameInput.value.trim();
+            if (nickname.length < 2) {
+                displayError('Veuillez entrer un pseudo d\'au moins 2 caractères.');
                 return;
             }
-            
             sendToServer({
                 action: 'CREATE_LOBBY',
                 nickname: nickname
             });
         });
-        
-        // --- Logique du Chat ---
-        
-        // Placeholders pour les fonctions de gain d'énergie/timer (non implémentées ici, mais conservées pour la structure)
-        let energyInterval = null;
-        let gameTimer = null;
-        
-        function stopEnergyGain() {
-            if (energyInterval) clearInterval(energyInterval);
-            energyInterval = null;
-        }
 
-        function stopTimer() {
-            if (gameTimer) clearInterval(gameTimer);
-            gameTimer = null;
-        }
+        joinLobbyBtn.addEventListener('click', () => {
+            const nickname = nicknameInput.value.trim();
+            const code = joinCodeInput.value.trim();
+
+            if (nickname.length < 2) {
+                displayError('Veuillez entrer un pseudo d\'au moins 2 caractères.');
+                return;
+            }
+            if (code.length !== 5 || isNaN(code)) {
+                displayError('Veuillez entrer un code de salon valide à 5 chiffres.');
+                return;
+            }
+
+            sendToServer({
+                action: 'JOIN_LOBBY',
+                nickname: nickname,
+                code: code
+            });
+        });
+
+        startGameBtn.addEventListener('click', () => {
+             showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Les autres joueurs devront attendre pour rejoindre.", () => {
+                 sendToServer({
+                    action: 'START_GAME'
+                });
+             });
+        });
 
         function sendMessage() {
             const content = messageInput.value.trim();
-            
-            if (!currentRoomCode) {
-                displayStatus("Vous n'êtes pas dans un salon.", true);
-                return;
-            }
-            
-            if (content.length === 0) {
-                // Ne rien faire si le message est vide
+            if (content === '') {
+                // Pas d'alerte sur mobile, juste ignorer
                 return;
             }
             
@@ -554,11 +561,12 @@
 
             sendToServer({
                 action: 'MESSAGE',
-                content: content,
-                nickname: nickname // Pour simplifier, on envoie le pseudo
+                content: content
             });
 
             messageInput.value = '';
+            // Ajustement important: S'assurer que le focus n'est pas perdu et que le clavier reste bas
+            messageInput.focus();
         }
         
         leaveLobbyBtn.addEventListener('click', () => {
@@ -573,24 +581,25 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            stopTimer(); 
+            // TODO: stopTimer(); 
             stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
             navigate('home');
             clearMessage();
         }
 
-        // --- Événements Clavier/Bouton ---\
+        // --- Événements Clavier/Bouton ---
         
         sendMessageBtn.addEventListener('click', sendMessage);
 
         messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+            // Empêche la touche Entrée par défaut d'ajouter un saut de ligne dans la zone de texte
+            if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
-        
-        // --- Initialisation ---\
+
+        // --- Initialisation ---
         initPersistance(); 
         window.onload = initWebSocket;
     </script>
