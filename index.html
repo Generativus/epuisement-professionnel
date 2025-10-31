@@ -104,14 +104,21 @@
                     <p>Hôte: <span id="host-id-display"></span></p>
                 </div>
                 
-                <!-- BOUTON DÉMARRER LA PARTIE (Ajouté) -->
+                <!-- BOUTON DÉMARRER LA PARTIE -->
                 <button id="start-game-btn" class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-xl shadow-lg transition duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                     Démarrer la partie
                 </button>
 
-                <div id="game-status" class="hidden flex justify-between items-center text-sm font-semibold">
-                    <p id="role-display" class="text-green-600"></p>
-                    <p id="game-timer" class="text-red-600"></p>
+                <!-- Status de la Manche et Objectifs (Visible pendant la partie) -->
+                <div id="game-status" class="hidden flex flex-col space-y-1 text-sm font-semibold">
+                    <div class="flex justify-between items-center">
+                        <p id="round-display" class="text-gray-700">Manche 0/3</p>
+                        <p id="game-timer" class="text-red-600">Temps: 00:00</p>
+                    </div>
+                    <div class="flex justify-between items-center bg-yellow-100 p-2 rounded-lg">
+                        <p class="text-gray-700">Travail (Score): <span id="current-job-points" class="font-bold">0</span> / <span id="job-points-goal" class="font-bold">0</span></p>
+                        <p id="energy-display" class="text-green-600 font-bold">Énergie: 100/100</p>
+                    </div>
                 </div>
             </div>
             
@@ -120,9 +127,15 @@
                 <!-- Les messages seront ajoutés ici par JavaScript -->
             </div>
 
+            <!-- NOUVEAU: Demande de travail d'équipe (apparaît en haut de la zone de saisie) -->
+            <div id="work-proposal-div" class="hidden p-3 bg-yellow-200 text-gray-800 font-medium text-center border-t border-yellow-300">
+                <p id="proposal-text"></p>
+                <p class="mt-1 text-xs">Répondez "oui" ou "non" dans la zone de chat.</p>
+            </div>
+
             <!-- 3. Pied de Page (Footer) : Zone de Saisie du Chat (Toujours Visible) -->
             <form id="message-form" class="flex space-x-2 p-4 border-t border-gray-200 bg-white items-end">
-                <input type="text" id="message-input" placeholder="Écrire un message..." class="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                <input type="text" id="message-input" placeholder="Écrire un message... (Énergie: 100/100)" class="flex-1 p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
                 <button type="submit" id="send-message-btn" class="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-md transition duration-150 transform hover:scale-[1.01] active:scale-[0.98]">
                     Envoyer
                 </button>
@@ -144,6 +157,28 @@
             </div>
         </div>
 
+        <!-- NOUVEAU: Modale de Contribution au Travail (hors écran, affichée par JS) -->
+        <div id="contribution-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-50 transition-opacity duration-300">
+            <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md space-y-4">
+                <h3 class="text-xl font-bold text-gray-800">Travail d'Équipe: Rapport Important</h3>
+                <p id="contribution-cost-info" class="text-gray-600">Coût partagé: 100 Énergie chacun. Votre énergie actuelle: <span id="my-current-energy" class="font-semibold text-green-600">100</span></p>
+                
+                <label for="contribution-input" class="block text-sm font-medium text-gray-700">
+                    Votre Contribution (1-100):
+                </label>
+                <input type="number" id="contribution-input" min="1" max="100" value="50" class="p-3 border border-gray-300 rounded-lg w-full focus:ring-indigo-500 focus:border-indigo-500" required>
+                
+                <p id="contribution-error" class="text-red-600 text-sm hidden"></p>
+
+                <div class="flex justify-end space-x-3">
+                    <button id="submit-contribution-btn" class="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition duration-150">
+                        Soumettre la Contribution
+                    </button>
+                </div>
+            </div>
+        </div>
+
+
     </div>
 
     <script type="text/javascript">
@@ -151,11 +186,12 @@
         // L'URL de votre serveur Render
         const WS_SERVER = 'wss://webrtc-epuisement-professionnel.onrender.com';
         
-        // --- Constantes Client ---
-        const MIN_PLAYERS = 4; // Doit correspondre à la constante serveur
-        const ENERGY_CAPACITY = 5;
-        const ENERGY_GAIN_RATE = 2000; // 2000 ms = 2 secondes pour regagner 1 point
-        const ENERGY_MESSAGE_COST = 1;
+        // --- Constantes Client (Mises à Jour) ---
+        const MIN_PLAYERS = 4; 
+        const ENERGY_CAPACITY = 100; // Capacité max d'énergie
+        // NOTE: La logique de gain d'énergie est maintenant gérée entièrement côté SERVEUR.
+        const ENERGY_MESSAGE_COST = 1; // Coût d'un message de chat standard
+        const WORK_COST_PER_PLAYER = 100; // Coût par joueur pour un travail (basé sur 200/2)
         
         let ws = null;
         let isConnected = false;
@@ -163,9 +199,10 @@
         let nickname = '';
         let userId = null;
         let lobbyData = {};
-        let currentTimer = null;
-        let energyInterval = null;
-        let currentEnergy = ENERGY_CAPACITY;
+        let currentEnergy = ENERGY_CAPACITY; // Sera mis à jour par le serveur
+        let isGameStarted = false;
+        let hasPendingProposal = false; // Pour la demande de travail d'équipe
+        let isAwaitingContribution = false; // Pour la soumission du montant
 
         // --- Récupération des éléments DOM ---
         const appContainer = document.getElementById('app-container');
@@ -184,17 +221,32 @@
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
         const messageForm = document.getElementById('message-form');
-        const gameStatusDiv = document.getElementById('game-status');
-        const roleDisplay = document.getElementById('role-display');
-        const gameTimer = document.getElementById('game-timer');
-        const startGameBtn = document.getElementById('start-game-btn'); // NOUVEAU: Bouton Démarrer la partie
+        const startGameBtn = document.getElementById('start-game-btn'); 
         
-        // Modale de confirmation
+        // NOUVEAUX ÉLÉMENTS DE JEU
+        const gameStatusDiv = document.getElementById('game-status');
+        const roundDisplay = document.getElementById('round-display');
+        const gameTimer = document.getElementById('game-timer');
+        const currentJobPointsDisplay = document.getElementById('current-job-points');
+        const jobPointsGoalDisplay = document.getElementById('job-points-goal');
+        const energyDisplay = document.getElementById('energy-display');
+        const workProposalDiv = document.getElementById('work-proposal-div');
+        const proposalText = document.getElementById('proposal-text');
+
+        // Modales
         const confirmationModal = document.getElementById('confirmation-modal');
         const confirmationText = document.getElementById('confirmation-text');
-        let confirmCallback = null;
         const confirmOkBtn = document.getElementById('confirm-ok-btn');
         const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+        let confirmCallback = null;
+        
+        // Modale de Contribution
+        const contributionModal = document.getElementById('contribution-modal');
+        const myCurrentEnergyDisplay = document.getElementById('my-current-energy');
+        const contributionCostInfo = document.getElementById('contribution-cost-info');
+        const contributionInput = document.getElementById('contribution-input');
+        const contributionError = document.getElementById('contribution-error');
+        const submitContributionBtn = document.getElementById('submit-contribution-btn');
 
 
         // --- Fonctions de Navigation et UI ---
@@ -206,12 +258,12 @@
 
             if (viewName === 'home') {
                 homeView.classList.remove('hidden');
-                // S'assurer que le conteneur principal a la bonne taille pour la vue d'accueil
                 appContainer.classList.remove('h-full', 'w-full', 'overflow-hidden');
                 appContainer.classList.add('lg:max-w-xl', 'rounded-xl', 'shadow-2xl', 'p-6');
+                // S'assurer que les éléments de jeu sont masqués
+                gameStatusDiv.classList.add('hidden');
             } else if (viewName === 'lobby') {
                 lobbyView.classList.remove('hidden');
-                // S'assurer que le conteneur principal est en plein écran pour la vue du lobby/chat
                 appContainer.classList.add('h-full', 'w-full', 'overflow-hidden');
                 appContainer.classList.remove('lg:max-w-xl', 'rounded-xl', 'shadow-2xl', 'p-6');
             }
@@ -228,8 +280,9 @@
 
         /** Ajoute un message au conteneur de messages. */
         function addMessage(msg) {
-            const isSystem = msg.action === 'SYSTEM_MESSAGE';
+            const isSystem = msg.action === 'SYSTEM_MESSAGE' || msg.nickname === 'Patrone';
             const isSelf = msg.userId === userId && !isSystem;
+            const isPatrone = msg.nickname === 'Patrone';
 
             const msgElement = document.createElement('div');
             msgElement.classList.add('message-item', 'flex', 'flex-col');
@@ -238,7 +291,9 @@
             
             if (isSystem) {
                 msgElement.classList.add('system-message', 'py-1');
-                htmlContent = `<span class="text-sm italic text-gray-500">${msg.content}</span>`;
+                const textClass = isPatrone ? 'text-indigo-700 font-bold' : 'text-sm italic text-gray-500';
+                const source = isPatrone ? 'Patrone' : '';
+                htmlContent = `<span class="${textClass}">${source ? source + ': ' : ''}${msg.content}</span>`;
             } else {
                 const nicknameClass = isSelf ? 'text-indigo-600 font-semibold' : 'text-gray-700 font-semibold';
                 msgElement.classList.add(isSelf ? 'items-end' : 'items-start');
@@ -259,38 +314,22 @@
         }
 
         /** Met à jour l'affichage de l'énergie. */
-        function updateEnergyDisplay() {
+        function updateEnergyDisplay(energy) {
+            currentEnergy = energy;
+            energyDisplay.textContent = `Énergie: ${currentEnergy}/${ENERGY_CAPACITY}`;
+            
             // Afficher l'énergie dans la zone de saisie
             messageInput.placeholder = `Écrire un message... (Énergie: ${currentEnergy}/${ENERGY_CAPACITY})`;
             
-            // Désactiver le bouton d'envoi si l'énergie est insuffisante
-            sendMessageBtn.disabled = currentEnergy < ENERGY_MESSAGE_COST;
-            if (sendMessageBtn.disabled) {
+            // Le bouton d'envoi n'est désactivé que si l'énergie est inférieure au coût d'un message normal
+            const isDisabled = currentEnergy < ENERGY_MESSAGE_COST;
+            sendMessageBtn.disabled = isDisabled;
+            if (isDisabled) {
                 sendMessageBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 sendMessageBtn.classList.remove('hover:bg-indigo-700');
             } else {
                 sendMessageBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 sendMessageBtn.classList.add('hover:bg-indigo-700');
-            }
-        }
-
-        /** Démarre le gain d'énergie. */
-        function startEnergyGain() {
-            if (energyInterval) clearInterval(energyInterval);
-            energyInterval = setInterval(() => {
-                if (currentEnergy < ENERGY_CAPACITY) {
-                    currentEnergy++;
-                    updateEnergyDisplay();
-                    // addMessage({ action: 'SYSTEM_MESSAGE', content: `+1 Énergie. Total: ${currentEnergy}/${ENERGY_CAPACITY}` }); // Optionnel: pour le debug
-                }
-            }, ENERGY_GAIN_RATE);
-        }
-
-        /** Arrête le gain d'énergie. */
-        function stopEnergyGain() {
-            if (energyInterval) {
-                clearInterval(energyInterval);
-                energyInterval = null;
             }
         }
         
@@ -385,21 +424,13 @@
 
             if (data.action === 'SYSTEM_MESSAGE' || data.action === 'MESSAGE') {
                 addMessage(data);
-            } else if (data.action === 'LOBBY_CREATED') {
+            } else if (data.action === 'LOBBY_CREATED' || data.action === 'LOBBY_JOINED') {
                 currentRoomCode = data.code;
                 saveNickname(nicknameInput.value.trim());
                 navigate('lobby');
-                addMessage({ action: 'SYSTEM_MESSAGE', content: `Salon créé. Code: ${currentRoomCode}. Vous êtes l'hôte.` });
-                startEnergyGain();
-            } else if (data.action === 'LOBBY_JOINED') {
-                currentRoomCode = data.code;
-                saveNickname(nicknameInput.value.trim());
-                navigate('lobby');
-                addMessage({ action: 'SYSTEM_MESSAGE', content: `Salon rejoint: ${currentRoomCode}.` });
-                startEnergyGain();
+                addMessage({ action: 'SYSTEM_MESSAGE', content: `Salon ${data.action === 'LOBBY_CREATED' ? 'créé' : 'rejoint'}: ${currentRoomCode}. ${data.action === 'LOBBY_CREATED' ? 'Vous êtes l\'hôte.' : ''}` });
             } else if (data.action === 'LOBBY_UPDATE') {
                 updateLobbyUI(data.lobby);
-                // Si l'hôte vient d'être transféré, le message système est déjà reçu, on ne fait que l'update UI.
             } else if (data.action === 'ERROR') {
                 displayError(data.content);
             } else if (data.action === 'LOBBY_LEFT') {
@@ -408,7 +439,28 @@
             
             // --- Gestion du Jeu ---
             if (data.action === 'GAME_STATUS_UPDATE') {
-                updateGameStatus(data.status, data.players, data.timer, data.role);
+                // Mettre à jour les informations spécifiques au joueur (énergie, rôle)
+                if (data.playerState) {
+                    updateEnergyDisplay(data.playerState.energy);
+                    // roleDisplay.textContent = `Votre rôle: ${data.playerState.role}`; // Si les rôles sont mis en place
+                }
+
+                // Mettre à jour le statut global du jeu
+                updateGameStatus(data);
+            } else if (data.action === 'WORK_PROPOSAL') {
+                // Un joueur nous demande de participer à un travail d'équipe
+                hasPendingProposal = true;
+                proposalText.textContent = `🚨 Demande de travail d'équipe de ${data.proposerNickname} pour ${data.targetNames.join(', ')} !`;
+                workProposalDiv.classList.remove('hidden');
+            } else if (data.action === 'REQUEST_WORK_CONTRIBUTION') {
+                 // Tous ont accepté, on demande la contribution
+                handleContributionRequest(data.cost);
+            } else if (data.action === 'VOTING_PHASE') {
+                // Phase de vote: afficher le message de la patrone
+                addMessage({ action: 'SYSTEM_MESSAGE', nickname: 'Patrone', content: data.patroneMessage });
+                // Préparer l'UI pour le vote (en désactivant la proposition de travail)
+                hasPendingProposal = false;
+                workProposalDiv.classList.add('hidden');
             }
         }
 
@@ -416,13 +468,12 @@
         function updateLobbyUI(lobby) {
             lobbyData = lobby;
             roomCodeDisplay.textContent = lobby.code;
+            isGameStarted = lobby.gameStatus !== 'WAITING';
 
-            // CORRECTION: Vérification pour s'assurer que lobby.clients existe.
             const playerCount = lobby.clients ? lobby.clients.length : 0;
             
             if (lobby.clients) {
                 playersCountDisplay.textContent = playerCount;
-
                 const hostClient = lobby.clients.find(c => c.id === lobby.hostId);
                 hostIdDisplay.textContent = hostClient ? lobby.players[hostClient.id]?.nickname || hostClient.id : 'N/A';
             } else {
@@ -431,14 +482,13 @@
                 console.error("Lobby data missing 'clients' array.", lobby);
             }
             
-            // --- Gestion du Bouton Démarrer la Partie (NOUVEAU) ---
+            // --- Gestion du Bouton Démarrer la Partie ---
             const isHost = lobby.hostId === userId;
             const canStart = playerCount >= MIN_PLAYERS;
             
-            startGameBtn.classList.add('hidden'); // Cacher par défaut
-            startGameBtn.disabled = true;
+            startGameBtn.classList.add('hidden'); 
 
-            if (isHost && lobby.gameStatus === 'WAITING') {
+            if (isHost && !isGameStarted) {
                 startGameBtn.classList.remove('hidden');
                 
                 if (canStart) {
@@ -446,16 +496,22 @@
                     startGameBtn.textContent = 'Démarrer la partie';
                 } else {
                     startGameBtn.disabled = true;
-                    // Afficher le nombre de joueurs manquants
                     startGameBtn.textContent = `En attente de ${MIN_PLAYERS - playerCount} joueur(s) minimum... (4 requis)`;
                 }
             } else {
                  startGameBtn.classList.add('hidden');
             }
-
+            
+            // --- Gestion de l'affichage du statut de jeu ---
+            if (isGameStarted) {
+                gameStatusDiv.classList.remove('hidden');
+                jobPointsGoalDisplay.textContent = lobby.jobPointsGoal || '200';
+            } else {
+                gameStatusDiv.classList.add('hidden');
+            }
 
             // Toujours mettre à jour l'énergie pour refléter l'état initial
-            updateEnergyDisplay();
+            updateEnergyDisplay(lobby.players[userId]?.energy || ENERGY_CAPACITY);
         }
         
         function clearMessage() {
@@ -464,39 +520,80 @@
 
         // --- Fonctions de Jeu/Timer ---
 
-        /** Démarre ou met à jour le compte à rebours du jeu. */
-        function updateGameStatus(status, players, timer, role) {
-            gameStatusDiv.classList.remove('hidden');
-            
-            // Rôle
-            if (role) {
-                roleDisplay.textContent = `Votre rôle: ${role}`;
-            }
+        /** Met à jour les éléments de statut de jeu pendant une manche. */
+        function updateGameStatus(data) {
+            isGameStarted = data.status !== 'WAITING';
+            if (!isGameStarted) return;
+
+            // Affichage de la manche
+            roundDisplay.textContent = `Manche ${data.currentRound || 1}/${data.totalRounds || 3}`;
 
             // Timer
-            if (timer !== null && timer >= 0) {
-                const minutes = Math.floor(timer / 60);
-                const seconds = timer % 60;
-                gameTimer.textContent = `Temps restant: ${minutes}:${seconds.toString().padStart(2, '0')}`;
-            } else {
-                gameTimer.textContent = '';
+            const timer = data.timer !== undefined ? data.timer : 0;
+            const minutes = Math.floor(timer / 60);
+            const seconds = timer % 60;
+            gameTimer.textContent = `Temps: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Points de Travail
+            currentJobPointsDisplay.textContent = data.currentJobPoints !== undefined ? data.currentJobPoints : '0';
+
+            // Masquer/Afficher les éléments d'UI selon l'état du jeu
+            if (data.status !== 'STARTED') {
+                workProposalDiv.classList.add('hidden');
+                hasPendingProposal = false;
             }
             
-            if (status === 'ENDED') {
+            if (data.status === 'ENDED') {
                 gameTimer.textContent = 'Partie terminée !';
-                stopTimer();
-            }
-            
-            // Masquer le bouton de démarrage si la partie n'est plus en attente
-            if (status !== 'WAITING') {
-                startGameBtn.classList.add('hidden');
             }
         }
         
-        function stopTimer() {
-            // Dans ce prototype, le timer est géré côté serveur.
-            // Cette fonction est un simple marqueur pour le nettoyage côté client.
+        /** Gère l'affichage de la modale de contribution */
+        function handleContributionRequest(cost) {
+            isAwaitingContribution = true;
+            hasPendingProposal = false; // Plus besoin du div de proposition
+            workProposalDiv.classList.add('hidden');
+
+            // Mettre à jour l'UI de la modale
+            contributionCostInfo.textContent = `Coût partagé: ${cost} Énergie chacun. Votre énergie actuelle: ${currentEnergy}/${ENERGY_CAPACITY}`;
+            myCurrentEnergyDisplay.textContent = currentEnergy;
+
+            // Définir les limites de l'input
+            contributionInput.min = 1;
+            contributionInput.max = Math.min(100, currentEnergy); // Ne peut pas dépasser 100 ni l'énergie disponible
+            contributionInput.value = Math.min(50, contributionInput.max); // Valeur par défaut sensée
+
+            contributionModal.classList.remove('hidden');
         }
+
+        /** Gère la soumission de la contribution */
+        submitContributionBtn.addEventListener('click', () => {
+            const contribution = parseInt(contributionInput.value, 10);
+            
+            // Validation
+            if (isNaN(contribution) || contribution < 1 || contribution > 100) {
+                contributionError.textContent = 'Veuillez entrer une valeur entre 1 et 100.';
+                contributionError.classList.remove('hidden');
+                return;
+            }
+            if (contribution > currentEnergy) {
+                contributionError.textContent = 'Contribution supérieure à votre énergie disponible!';
+                contributionError.classList.remove('hidden');
+                return;
+            }
+            contributionError.classList.add('hidden');
+
+            // Envoi au serveur
+            sendToServer({
+                action: 'SUBMIT_CONTRIBUTION',
+                contribution: contribution
+            });
+
+            // Fermer la modale et réinitialiser l'état local
+            contributionModal.classList.add('hidden');
+            isAwaitingContribution = false;
+        });
+
 
         // --- Événements Formulaires/Boutons ---
         
@@ -505,7 +602,6 @@
             sendMessage();
         });
         
-        // NOUVEAU: Événement pour le bouton de démarrage
         startGameBtn.addEventListener('click', () => {
             if (startGameBtn.disabled) return;
             showConfirmation("Confirmez-vous le lancement de la partie ? Tous les joueurs seront notifiés.", () => {
@@ -514,6 +610,65 @@
                 });
             });
         });
+
+        /** Envoie un message de chat. */
+        function sendMessage() {
+            let content = messageInput.value.trim();
+            if (content === '') {
+                return;
+            }
+            
+            // 1. Gérer les réponses OUI/NON pour une proposition de travail
+            if (hasPendingProposal) {
+                const lowerContent = content.toLowerCase();
+                if (lowerContent === 'oui' || lowerContent === 'non') {
+                    sendToServer({
+                        action: 'WORK_RESPONSE',
+                        response: lowerContent // 'oui' ou 'non'
+                    });
+                    // On garde le div visible jusqu'à ce que le serveur réponde
+                    messageInput.value = '';
+                    return;
+                }
+            }
+
+            // 2. Gérer les votes (en phase de vote)
+            if (lobbyData.gameStatus === 'VOTING' && content.toLowerCase().startsWith('vote ')) {
+                 sendToServer({
+                    action: 'VOTE',
+                    targetNickname: content.substring(5).trim()
+                });
+                messageInput.value = '';
+                return;
+            }
+
+            // 3. Gérer les propositions de travail d'équipe
+            if (isGameStarted && content.toLowerCase().startsWith('rapport ')) {
+                // Le serveur validera le format et l'énergie
+                sendToServer({
+                    action: 'TEAMWORK_PROPOSAL',
+                    content: content
+                });
+                messageInput.value = '';
+                return;
+            }
+
+            // 4. Message de chat standard
+            if (currentEnergy < ENERGY_MESSAGE_COST) {
+                displayError('Énergie insuffisante pour envoyer un message !');
+                return;
+            }
+            
+            // La dépense d'énergie est maintenant gérée côté serveur après l'envoi
+            sendToServer({
+                action: 'MESSAGE',
+                content: content
+            });
+
+            messageInput.value = '';
+        }
+        
+        // ... (Join/Create/Leave lobby events restent inchangés) ...
 
         /** Gère la tentative de rejoindre un salon. */
         joinBtn.addEventListener('click', () => {
@@ -563,30 +718,6 @@
                 userId: userId // Envoi de l'ID pour la persistance
             });
         });
-
-        /** Envoie un message de chat. */
-        function sendMessage() {
-            const content = messageInput.value.trim();
-            if (content === '') {
-                return;
-            }
-
-            if (currentEnergy < ENERGY_MESSAGE_COST) {
-                displayError('Énergie insuffisante pour envoyer un message !');
-                return;
-            }
-            
-            // Dépense de l'énergie
-            currentEnergy -= ENERGY_MESSAGE_COST;
-            updateEnergyDisplay();
-
-            sendToServer({
-                action: 'MESSAGE',
-                content: content
-            });
-
-            messageInput.value = '';
-        }
         
         leaveLobbyBtn.addEventListener('click', () => {
             showConfirmation("Êtes-vous sûr de vouloir quitter le salon ? La déconnexion est immédiate.", () => {
@@ -600,28 +731,18 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            stopTimer(); 
-            stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
-            // Réinitialiser l'énergie pour la prochaine partie
-            currentEnergy = ENERGY_CAPACITY;
+            isGameStarted = false;
+            hasPendingProposal = false;
+            isAwaitingContribution = false;
+            workProposalDiv.classList.add('hidden');
+            contributionModal.classList.add('hidden');
+            // Réinitialiser l'énergie pour la prochaine partie (sera mis à jour par le serveur)
+            currentEnergy = ENERGY_CAPACITY; 
             navigate('home');
             clearMessage();
         }
-
-        // --- Événements Clavier/Bouton ---
         
-        // La soumission du formulaire est maintenant gérée par l'événement 'submit'
-        // du formulaire pour capturer aussi bien le bouton que la touche Entrée.
-
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                // Empêche la touche Entrée de soumettre le formulaire deux fois (car 'submit' est déjà écouté)
-                // et assure que le curseur ne crée pas de nouvelle ligne dans l'input text.
-                // NOTE: L'événement 'submit' du formulaire appelle déjà sendMessage()
-            }
-        });
-        
-        // --- Initialisation ---\
+        // --- Initialisation ---
         initPersistance(); 
         window.onload = initWebSocket;
     </script>
