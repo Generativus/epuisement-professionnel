@@ -130,6 +130,7 @@
                     <button id="leave-lobby-btn" class="text-sm bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
                         Quitter
                     </button>
+                    <!-- Le bouton Démarrer est masqué/affiché par JavaScript via la classe 'hidden' -->
                     <button id="start-game-btn" class="hidden text-sm bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
                         Démarrer le Jeu
                     </button>
@@ -137,13 +138,11 @@
             </div>
             
             <!-- 2. Conteneur des Messages (Doit défiler) -->
-            <!-- AJOUT CLÉ 2: flex-grow pour prendre l'espace, overflow-y-auto pour le défilement -->
             <div id="messages-container" class="flex-grow w-full overflow-y-auto bg-white p-3 rounded-lg shadow-inner space-y-2 border border-gray-200">
                 <!-- Les messages seront ajoutés ici par JavaScript -->
             </div>
             
             <!-- 3. Zone de Saisie de Message (Fixe en bas) -->
-            <!-- AJOUT CLÉ 3: flex-shrink-0 pour rester en bas, mt-4 pour l'espacement avec le chat -->
             <div id="message-input-area" class="w-full mt-4 flex space-x-2 flex-shrink-0">
                 <textarea id="message-input" rows="1" placeholder="Tapez votre message..." 
                           class="flex-grow p-3 border-2 border-gray-300 rounded-full resize-none focus:border-blue-500 focus:ring-blue-500 transition duration-150"></textarea>
@@ -238,9 +237,8 @@
                 targetScreen.classList.remove('hidden');
                 targetScreen.classList.add('active');
                 currentScreen = screenId;
-                // Ajustement pour le mobile : assure le focus sur l'entrée du chat si c'est l'écran du lobby
+                // Correction: S'assurer que le chat défile vers le bas après la navigation vers le lobby
                 if (screenId === 'lobby') {
-                    // Petite astuce pour s'assurer que le navigateur comprend la nouvelle disposition
                     setTimeout(() => messagesContainer.scrollTop = messagesContainer.scrollHeight, 100);
                 }
             }
@@ -485,17 +483,21 @@
             }
         }
 
-        /** Met à jour l'interface du lobby */
+        /** Met à jour l'interface du lobby (Gestion de l'affichage du bouton Démarrer) */
         function updateLobbyUI(lobby) {
+            // Constante MIN_PLAYERS doit être récupérée du serveur ou du client
+            const MIN_PLAYERS = 4; // Correspond à la constante du serveur
             const isHost = lobby.hostId === userId;
-            const MIN_PLAYERS = 4; // Doit correspondre à la constante serveur
-            const isReadyToStart = lobby.clients.length >= MIN_PLAYERS && lobby.gameStatus === 'WAITING';
+            const playerCountValue = lobby.clients.length;
+            
+            // Le jeu ne peut démarrer que s'il y a assez de joueurs ET que le statut est 'WAITING'
+            const isReadyToStart = playerCountValue >= MIN_PLAYERS && lobby.gameStatus === 'WAITING';
 
-            // Mettre à jour les infos principales
-            playerCount.textContent = `Joueurs: ${lobby.clients.length}`;
+            // Mise à jour des infos principales
+            playerCount.textContent = `Joueurs: ${playerCountValue}`;
             statusDisplay.textContent = lobby.gameStatus;
             
-            // Afficher le nom de l'hôte (chercher dans la liste des joueurs)
+            // Afficher le nom de l'hôte
             const hostClient = lobby.clients.find(c => c.id === lobby.hostId);
             hostNameDisplay.textContent = hostClient ? hostClient.nickname : 'Inconnu';
 
@@ -556,17 +558,13 @@
                 return;
             }
             
-            // TODO: Vérifier si le joueur a assez d'énergie pour parler et la dépenser.
-            // Pour l'instant, on laisse le chat libre pour les tests.
-
+            // Revenir à la mécanique de chat d'avant (simple envoi de MESSAGE)
             sendToServer({
                 action: 'MESSAGE',
                 content: content
             });
 
             messageInput.value = '';
-            // Ajustement important: S'assurer que le focus n'est pas perdu et que le clavier reste bas
-            messageInput.focus();
         }
         
         leaveLobbyBtn.addEventListener('click', () => {
@@ -582,7 +580,7 @@
             currentRoomCode = null;
             lobbyData = {};
             // TODO: stopTimer(); 
-            stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
+            stopEnergyGain(); 
             navigate('home');
             clearMessage();
         }
@@ -592,7 +590,7 @@
         sendMessageBtn.addEventListener('click', sendMessage);
 
         messageInput.addEventListener('keypress', (e) => {
-            // Empêche la touche Entrée par défaut d'ajouter un saut de ligne dans la zone de texte
+            // Gère l'envoi avec Entrée sans saut de ligne (Shift+Entrée laisse le saut de ligne)
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
