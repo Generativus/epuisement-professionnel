@@ -20,7 +20,6 @@
             align-items: center;
             justify-content: center;
             padding: 0; /* Retirer le padding du body global */
-            background-color: #1f2937; /* Fond sombre pour le corps */
         }
         
         /* Le conteneur d'application prend la hauteur totale de l'écran ou une taille maximale sur desktop */
@@ -29,494 +28,614 @@
             max-height: 100vh; /* S'assure qu'il ne dépasse pas sur mobile */
             width: 100%;
             max-width: 6xl; /* Taille maximale pour desktop */
-            margin: 0 auto; /* Centrage pour les grands écrans */
-            border-radius: 0; 
-            /* AJOUT CLÉ 1: Conteneur Flexbox vertical principal */
-            display: flex;
-            flex-direction: column; 
-            background-color: #f3f4f6; /* Fond clair pour l'application */
+            margin: 0;
+            border-radius: 0;
         }
 
-        /* Masquage/Affichage des écrans */
-        .screen {
-            display: none;
+        /* Sur les grands écrans, on restaure un look centré et arrondi */
+        @media (min-width: 768px) {
+            #app-container {
+                height: 90vh;
+                max-height: 800px;
+                width: 95%;
+                border-radius: 0.75rem; /* rounded-xl */
+                margin: 2rem;
+            }
         }
 
-        .screen.active {
-            display: flex; /* Utiliser flex pour tous les écrans actifs pour gérer la mise en page */
+        /* Style pour les messages envoyés par l'utilisateur courant */
+        .message-me {
+            justify-content: flex-end;
         }
-
-        /* Style pour les messages du chat */
-        .system-message {
-            font-style: italic;
-            color: #4b5563;
-            text-align: center;
-        }
-        .user-message-self {
+        .bubble-me {
             background-color: #3b82f6; /* Bleu */
             color: white;
-            align-self: flex-end;
-            border-radius: 1rem 1rem 0 1rem;
-            max-width: 80%;
-            padding: 0.5rem 1rem;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            border-bottom-right-radius: 0;
         }
-        .user-message-other {
-            background-color: #ffffff; /* Blanc */
+        /* Style pour les messages des autres utilisateurs */
+        .message-other {
+            justify-content: flex-start;
+        }
+        .bubble-other {
+            background-color: #e5e7eb; /* Gris clair */
             color: #1f2937;
-            align-self: flex-start;
-            border-radius: 1rem 1rem 1rem 0;
-            max-width: 80%;
-            padding: 0.5rem 1rem;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            border-bottom-left-radius: 0;
         }
-        .message-nickname {
-            font-weight: bold;
-            font-size: 0.75rem; /* text-xs */
+        /* Style pour les messages système */
+        .message-system {
+            text-align: center;
+            font-style: italic;
             color: #6b7280;
-            margin-bottom: 0.25rem;
+            font-size: 0.8rem;
         }
-
-        /* Animations pour les transitions d'écran (optionnel) */
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        /* Custom scrollbar for better look, especially on WebKit browsers */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
         }
-        .active {
-            animation: fadeIn 0.3s ease-in-out;
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #d1d5db;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f3f4f6;
         }
     </style>
 </head>
-<body>
-    <div id="app-container" class="w-full h-full max-w-lg mx-auto bg-white shadow-xl rounded-lg">
+<body class="bg-gray-100">
 
-        <!-- Écran d'Accueil -->
-        <div id="home-screen" class="screen active p-8 flex flex-col items-center justify-center h-full">
-            <h1 class="text-3xl font-extrabold text-gray-900 mb-6">Jeu de Déduction Sociale</h1>
-            
-            <input type="text" id="nickname-input" placeholder="Votre Pseudo" class="w-full p-3 mb-4 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-blue-500 transition duration-150">
-            
-            <div class="w-full space-y-3">
-                <button id="create-lobby-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01]">
-                    Créer un Salon
-                </button>
+    <!-- Conteneur principal de l'application -->
+    <div id="app-container" class="bg-white shadow-2xl overflow-hidden flex flex-col">
 
-                <div class="flex items-center space-x-2">
-                    <input type="text" id="join-code-input" placeholder="Code du Salon (5 chiffres)" maxlength="5" class="flex-grow p-3 border-2 border-gray-300 rounded-lg text-center tracking-widest uppercase transition duration-150">
-                    <button id="join-lobby-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01]">
-                        Rejoindre
-                    </button>
-                </div>
+        <!-- Écran de Connexion (Home) -->
+        <div id="home-screen" class="p-6 md:p-8 flex flex-col items-center justify-center flex-grow">
+            <h1 class="text-3xl font-extrabold text-blue-600 mb-6">Rejoindre ou Créer un Salon de Jeu</h1>
+            
+            <p class="text-xs text-gray-500 mb-4 bg-blue-50 p-2 rounded-lg w-full text-center font-mono">
+                Connecté au serveur: <span class="font-bold text-blue-800">https://webrtc-epuisement-professionnel.onrender.com</span>
+            </p>
+
+            <input id="nickname-input" type="text" placeholder="Entrez votre pseudonyme (Max 15)" maxlength="15"
+                   class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+
+            <!-- Bloc de création de salon -->
+            <button id="create-lobby-btn"
+                    class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md transform hover:scale-[1.01]">
+                Créer un nouveau salon (Vous serez l'hôte)
+            </button>
+
+            <div class="my-6 w-full flex items-center">
+                <div class="flex-grow border-t border-gray-300"></div>
+                <span class="flex-shrink mx-4 text-gray-500 text-sm">OU</span>
+                <div class="flex-grow border-t border-gray-300"></div>
             </div>
-            
-            <p id="error-message" class="text-red-500 mt-4 h-6 text-sm"></p>
+
+            <!-- Bloc de jonction de salon -->
+            <input id="join-code-input" type="text" placeholder="Code du salon (5 chiffres)" maxlength="5"
+                   class="w-full p-3 mb-4 border border-gray-300 rounded-lg text-center tracking-widest text-lg font-mono focus:ring-blue-500 focus:border-blue-500 transition duration-150">
+
+            <button id="join-lobby-btn"
+                    class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md transform hover:scale-[1.01]">
+                Rejoindre le salon
+            </button>
+
+            <p id="error-message" class="mt-4 text-red-500 text-sm font-medium hidden"></p>
         </div>
 
-        <!-- Écran de Lobby -->
-        <div id="lobby-screen" class="screen w-full h-full flex flex-col p-4 bg-gray-50">
+        <!-- Écran de Chat (Lobby/Jeu) -->
+        <!-- Flexbox principal qui permet au conteneur de messages de s'ajuster -->
+        <div id="chat-screen" class="hidden flex-col flex-grow h-full">
             
-            <!-- 1. En-tête / Informations du Lobby (Fixe en haut) -->
-            <div id="lobby-info" class="w-full p-3 bg-white border-b border-gray-200 shadow-sm rounded-lg mb-4 flex-shrink-0">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">Salon #<span id="lobby-code-display"></span></h2>
-                    <span id="player-count" class="text-lg font-semibold text-blue-600">Joueurs: 0</span>
+            <!-- Barre de menu du jeu/lobby (Hauteur fixe) -->
+            <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg flex-shrink-0">
+                <div class="flex items-center space-x-4 mb-2 sm:mb-0 w-full sm:w-auto justify-between">
+                    <h2 class="text-lg font-bold">Salon <span id="current-room-code" class="ml-1 bg-blue-600 text-white text-sm font-mono tracking-widest px-2 py-0.5 rounded"></span></h2>
+                    
+                    <p id="player-count-display" class="text-sm flex items-center">
+                        <!-- Icône utilisateur -->
+                        <svg class="w-4 h-4 mr-1 text-green-400" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
+                        <span id="player-count">1</span> / <span id="max-players">?</span> Joueurs
+                    </p>
                 </div>
-                <p id="host-info" class="text-sm text-gray-500">Hôte: <span id="host-name-display"></span></p>
-                <div id="game-status-info" class="mt-2 text-sm text-gray-700">
-                    Statut: <span id="status-display" class="font-medium">EN ATTENTE</span>
-                </div>
-                <!-- Boutons d'Action Hôte/Joueur -->
-                <div class="mt-3 flex justify-end space-x-3">
-                    <button id="leave-lobby-btn" class="text-sm bg-red-500 hover:bg-red-600 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
-                        Quitter
-                    </button>
-                    <!-- Le bouton Démarrer est masqué/affiché par JavaScript via la classe 'hidden' -->
-                    <button id="start-game-btn" class="hidden text-sm bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded-lg transition duration-150">
+
+                <div class="flex items-center space-x-3 mt-2 sm:mt-0 w-full sm:w-auto justify-between sm:justify-end">
+                    <!-- Affichage de l'énergie (Ajout) -->
+                    <div id="energy-display-container" class="flex items-center bg-yellow-400 text-gray-900 font-extrabold px-3 py-1 rounded-full shadow-inner">
+                         <!-- Icône d'Éclair/Énergie -->
+                         <svg class="w-4 h-4 mr-1 fill-current" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M13 14H7a2 2 0 00-2 2v2a2 2 0 002 2h6a2 2 0 002-2v-2a2 2 0 00-2-2zM5.5 8.79l3.5-6.75a.5.5 0 01.9-.02l3.5 6.75A.5.5 0 0113 9H7a.5.5 0 01-.5-.21z"></path></svg>
+                         <span id="energy-points">0</span>
+                    </div>
+
+                    <button id="start-game-btn"
+                            class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 shadow-md flex-shrink-0 disabled:bg-red-900 disabled:opacity-50 hidden">
                         Démarrer le Jeu
                     </button>
+                    <button id="leave-lobby-btn" class="text-white hover:text-red-300 transition duration-150 p-1 rounded-full text-sm font-medium border border-white">
+                        Quitter
+                    </button>
                 </div>
-            </div>
-            
-            <!-- 2. Conteneur des Messages (Doit défiler) -->
-            <div id="messages-container" class="flex-grow w-full overflow-y-auto bg-white p-3 rounded-lg shadow-inner space-y-2 border border-gray-200">
-                <!-- Les messages seront ajoutés ici par JavaScript -->
-            </div>
-            
-            <!-- 3. Zone de Saisie de Message (Fixe en bas) -->
-            <div id="message-input-area" class="w-full mt-4 flex space-x-2 flex-shrink-0">
-                <textarea id="message-input" rows="1" placeholder="Tapez votre message..." 
-                          class="flex-grow p-3 border-2 border-gray-300 rounded-full resize-none focus:border-blue-500 focus:ring-blue-500 transition duration-150"></textarea>
-                <button id="send-message-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition duration-150 transform hover:scale-[1.05]">
-                    <!-- Icône d'envoi SVG -->
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 transform rotate-90 translate-y-[-1px] translate-x-[1px]">
-                        <path d="M3.478 2.405a.75.75 0 0 0-.926.94l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.599 60.599 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.599 60.599 0 0 0 3.478 2.405Z" />
-                    </svg>
-                </button>
+            </header>
+
+            <!-- Affichage de l'état du jeu et du timer (Hauteur fixe) -->
+            <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 flex-shrink-0 hidden">
+                <p id="game-status-text">
+                    <span id="timer-display" class="text-xl text-red-600 font-extrabold font-mono">15:00</span> - Débat en cours
+                </p>
             </div>
 
+
+            <!-- Zone d'affichage des messages (Zone de taille flexible et scrollable) -->
+            <div id="messages-container" class="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar bg-white min-h-0">
+                <!-- Les messages seront insérés ici par JavaScript -->
+            </div>
+
+            <!-- Zone de saisie de message (Hauteur fixe) -->
+            <footer class="p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                <div class="flex space-x-3">
+                    <input id="message-input" type="text" placeholder="Écrivez un message..."
+                           class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-150"
+                           maxlength="256">
+                    <button id="send-message-btn"
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md transform hover:scale-[1.01] flex-shrink-0">
+                        Envoyer
+                    </button>
+                </div>
+            </footer>
+        </div>
+
+        <!-- Indicateur de chargement -->
+        <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center rounded-xl hidden">
+            <div class="text-center">
+                <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-3 text-lg text-gray-700">Connexion WebSocket...</p>
+            </div>
         </div>
         
-        <!-- Écran du Jeu (à implémenter) -->
-        <div id="game-screen" class="screen p-4 flex flex-col items-center justify-center h-full">
-            <h1 class="text-3xl font-extrabold text-gray-900">Écran du Jeu</h1>
-            <p class="mt-4 text-gray-600">Le jeu est en cours. Vos actions et informations de rôle seront affichées ici.</p>
-        </div>
-
-        <!-- Modale de Confirmation (Invisible par défaut) -->
-        <div id="confirmation-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
-            <div class="bg-white rounded-lg p-6 max-w-sm w-full shadow-2xl">
-                <p id="confirmation-message" class="text-lg font-medium text-gray-800 mb-4">Êtes-vous sûr ?</p>
+        <!-- Boîte de dialogue de confirmation pour quitter (remplace alert/confirm) -->
+        <div id="confirmation-dialog" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-80">
+                <h3 class="text-lg font-bold mb-4">Confirmer l'Action</h3>
+                <p id="confirmation-message" class="mb-6 text-gray-600">Êtes-vous sûr de vouloir quitter le salon ?</p>
                 <div class="flex justify-end space-x-3">
-                    <button id="confirm-cancel-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-150">
-                        Annuler
-                    </button>
-                    <button id="confirm-ok-btn" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-150">
-                        Confirmer
-                    </button>
+                    <button id="cancel-confirm-btn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition">Annuler</button>
+                    <button id="confirm-action-btn" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">Confirmer</button>
                 </div>
             </div>
         </div>
 
     </div>
 
-    <script type="module">
-        // --- Variables Globales ---
-        let ws;
-        let currentScreen = 'home';
-        let currentRoomCode = null;
-        let lobbyData = {};
-        let userId = null; // ID unique du client
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT_ATTEMPTS = 5;
-        let confirmationCallback = null;
+    <!-- Script WebSocket -->
+    <script>
+        // --- Configuration du Serveur ---
+        const SERVER_ADDRESS = 'wss://webrtc-epuisement-professionnel.onrender.com';
         
-        // PARAMÈTRE DE CONNEXION FIXE
-        // URL du serveur WebSocket (WSS) extraite de l'URL Render fournie.
-        const WEBSOCKET_SERVER_URL = "wss://webrtc-epuisement-professionnel.onrender.com";
+        // --- Clés de Stockage Local ---
+        const USER_ID_KEY = 'chatAppUserId';
+        const NICKNAME_KEY = 'chatAppNickname';
+
+        // --- Constantes de Jeu ---
+        const MIN_PLAYERS = 4;
+        const GAME_DURATION_SECONDS = 900; // 15 minutes
+        const ENERGY_GAIN_AMOUNT = 10;
+        const ENERGY_GAIN_INTERVAL_MS = 10000; // 10 secondes
+
+        
+        // --- Variables Globales ---
+        let ws = null;
+        let userId = null; 
+        let currentRoomCode = null;
+        let nickname = '';
+        let lobbyData = {}; 
+        let gameTimerInterval = null;
+        let remainingTime = GAME_DURATION_SECONDS;
+        let energyPoints = 0; // Points d'énergie du joueur
+        let energyInterval = null; // Intervalle pour le gain d'énergie
 
 
-        // Éléments du DOM (mis en cache pour une utilisation facile)
-        const appContainer = document.getElementById('app-container');
+        // --- Références DOM ---
         const homeScreen = document.getElementById('home-screen');
-        const lobbyScreen = document.getElementById('lobby-screen');
-        const gameScreen = document.getElementById('game-screen');
+        const chatScreen = document.getElementById('chat-screen');
         const nicknameInput = document.getElementById('nickname-input');
         const joinCodeInput = document.getElementById('join-code-input');
         const createLobbyBtn = document.getElementById('create-lobby-btn');
         const joinLobbyBtn = document.getElementById('join-lobby-btn');
-        const errorMessage = document.getElementById('error-message');
-        const lobbyCodeDisplay = document.getElementById('lobby-code-display');
-        const hostNameDisplay = document.getElementById('host-name-display');
-        const playerCount = document.getElementById('player-count');
-        const statusDisplay = document.getElementById('status-display');
         const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
-        const startGameBtn = document.getElementById('start-game-btn');
+        const errorMessage = document.getElementById('error-message');
         const messagesContainer = document.getElementById('messages-container');
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
-        const confirmationModal = document.getElementById('confirmation-modal');
-        const confirmationMessage = document.getElementById('confirmation-message');
-        const confirmOkBtn = document.getElementById('confirm-ok-btn');
-        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+        const currentRoomCodeDisplay = document.getElementById('current-room-code');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        
+        const confirmDialog = document.getElementById('confirmation-dialog');
+        const confirmMsg = document.getElementById('confirmation-message');
+        const cancelConfirmBtn = document.getElementById('cancel-confirm-btn');
+        const confirmActionBtn = document.getElementById('confirm-action-btn');
+        
+        // NOUVEAUX ÉLÉMENTS DOM
+        const startGameBtn = document.getElementById('start-game-btn');
+        const playerCountDisplay = document.getElementById('player-count');
+        const gameStatusBar = document.getElementById('game-status-bar');
+        const timerDisplay = document.getElementById('timer-display');
+        const energyPointsDisplay = document.getElementById('energy-points'); // Nouvel affichage d'énergie
 
-        // Variables de Jeu/Énergie (pour la simulation)
-        let energy = 10; // Énergie de départ
-        let maxEnergy = 10; 
-        let energyGainInterval = null;
 
-        // --- Fonctions d'Utilité ---
+        // --- Fonctions de Persistance ---
 
-        /** Navigation entre les écrans */
-        function navigate(screenId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-                screen.classList.add('hidden');
-            });
-            const targetScreen = document.getElementById(`${screenId}-screen`);
-            if (targetScreen) {
-                targetScreen.classList.remove('hidden');
-                targetScreen.classList.add('active');
-                currentScreen = screenId;
-                // Correction: S'assurer que le chat défile vers le bas après la navigation vers le lobby
-                if (screenId === 'lobby') {
-                    setTimeout(() => messagesContainer.scrollTop = messagesContainer.scrollHeight, 100);
-                }
-            }
-            clearMessage();
-        }
-
-        /** Génère un ID utilisateur unique ou le récupère depuis le stockage local */
         function initPersistance() {
-            let storedId = localStorage.getItem('userId');
-            if (!storedId) {
-                storedId = crypto.randomUUID();
-                localStorage.setItem('userId', storedId);
-            }
-            userId = storedId;
-            // Récupérer le dernier pseudo utilisé
-            const storedNickname = localStorage.getItem('nickname');
-            if (storedNickname) {
-                nicknameInput.value = storedNickname;
-            }
-        }
-
-        /** Affiche un message d'erreur temporaire */
-        function displayError(message) {
-            errorMessage.textContent = message;
-            setTimeout(() => {
-                errorMessage.textContent = '';
-            }, 5000);
-        }
-
-        /** Réinitialise l'affichage des messages */
-        function clearMessage() {
-             errorMessage.textContent = '';
-        }
-
-        /** Convertit l'heure en format lisible HH:MM */
-        function formatTime(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        }
-
-        /** Ajoute un message au conteneur de messages et fait défiler vers le bas */
-        function addMessage(msg) {
-            const isSystem = msg.action === 'SYSTEM_MESSAGE';
-            const isSelf = msg.senderId === userId;
-            const msgElement = document.createElement('div');
-            
-            // Conteneur de message
-            msgElement.className = `flex ${isSelf ? 'justify-end' : 'justify-start'} w-full`;
-            
-            // Contenu du message
-            const contentElement = document.createElement('div');
-            contentElement.className = isSystem 
-                ? 'system-message text-sm w-full' 
-                : isSelf 
-                    ? 'user-message-self' 
-                    : 'user-message-other';
-            
-            if (isSystem) {
-                contentElement.innerHTML = `[${formatTime(msg.timestamp)}] ${msg.content}`;
+            let storedId = localStorage.getItem(USER_ID_KEY);
+            if (storedId) {
+                userId = storedId;
             } else {
-                // Afficher le pseudo de l'autre utilisateur
-                if (!isSelf) {
-                    const nicknameElement = document.createElement('div');
-                    nicknameElement.className = 'message-nickname';
-                    nicknameElement.textContent = msg.nickname;
-                    contentElement.appendChild(nicknameElement);
-                }
-                
-                // Contenu principal du message
-                const textElement = document.createElement('p');
-                textElement.textContent = msg.content;
-                contentElement.appendChild(textElement);
-
-                // Horodatage dans le message
-                const timeElement = document.createElement('span');
-                timeElement.className = 'block text-right mt-1 text-xs opacity-70';
-                timeElement.textContent = formatTime(msg.timestamp);
-                contentElement.appendChild(timeElement);
+                userId = crypto.randomUUID();
+                localStorage.setItem(USER_ID_KEY, userId);
             }
-
-            msgElement.appendChild(contentElement);
-            messagesContainer.appendChild(msgElement);
-
-            // Défiler vers le bas (le plus important pour le chat)
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-
-        /** Affiche une modale de confirmation */
-        function showConfirmation(message, onConfirm) {
-            confirmationMessage.textContent = message;
-            confirmationModal.classList.remove('hidden', 'fade-out');
-            confirmationModal.classList.add('flex', 'fade-in');
-            confirmationCallback = onConfirm;
+            
+            let storedNickname = localStorage.getItem(NICKNAME_KEY);
+            if (storedNickname) {
+                nickname = storedNickname;
+                nicknameInput.value = nickname;
+            }
         }
         
-        /** Gère la confirmation de la modale */
-        confirmOkBtn.addEventListener('click', () => {
-            if (confirmationCallback) {
-                confirmationCallback();
+        function saveNickname(newNickname) {
+            localStorage.setItem(NICKNAME_KEY, newNickname);
+            nickname = newNickname;
+        }
+
+
+        // --- Fonctions utilitaires ---
+
+        function showLoading() {
+            loadingOverlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+
+        function alertMessage(message, isError = true) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+            errorMessage.classList.remove('text-red-500', 'text-green-500');
+            errorMessage.classList.add(isError ? 'text-red-500' : 'text-green-500');
+        }
+
+        function clearMessage() {
+            errorMessage.classList.add('hidden');
+        }
+
+        function navigate(screen) {
+            // S'assurer que le Flexbox fonctionne pour la navigation
+            homeScreen.classList.add('hidden');
+            chatScreen.classList.add('hidden');
+            if (screen === 'home') {
+                homeScreen.classList.remove('hidden');
+            } else if (screen === 'chat') {
+                chatScreen.classList.remove('hidden');
+                setTimeout(() => messagesContainer.scrollTop = messagesContainer.scrollHeight, 100);
             }
-            confirmationModal.classList.remove('flex', 'fade-in');
-            confirmationModal.classList.add('hidden', 'fade-out');
-            confirmationCallback = null;
-        });
+        }
 
-        /** Gère l'annulation de la modale */
-        confirmCancelBtn.addEventListener('click', () => {
-            confirmationModal.classList.remove('flex', 'fade-in');
-            confirmationModal.classList.add('hidden', 'fade-out');
-            confirmationCallback = null;
-        });
+        function displayMessage({ senderId, senderNickname, content, timestamp, isSystem = false }) {
+            // ... (logique d'affichage des messages) ...
+            const messageDiv = document.createElement('div');
 
+            if (isSystem) {
+                messageDiv.className = 'message-system p-2';
+                messageDiv.innerHTML = `--- ${content} ---`;
+            } else {
+                const isMe = senderId === userId;
+                messageDiv.className = `flex w-full ${isMe ? 'message-me' : 'message-other'}`;
 
-        // --- Gestion de l'Énergie (pour la simulation) ---
+                const bubble = document.createElement('div');
+                bubble.className = `max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-xl shadow-md ${isMe ? 'bubble-me' : 'bubble-other'}`;
+
+                const nicknameSpan = document.createElement('span');
+                nicknameSpan.className = `block text-xs font-semibold mb-1 ${isMe ? 'text-gray-200' : 'text-gray-600'}`;
+                nicknameSpan.textContent = isMe ? 'Moi' : senderNickname;
+
+                const contentP = document.createElement('p');
+                contentP.className = 'text-sm break-words whitespace-pre-wrap';
+                contentP.textContent = content;
+
+                const timeSpan = document.createElement('span');
+                timeSpan.className = `block text-right text-xs mt-1 ${isMe ? 'text-gray-300' : 'text-gray-500'}`;
+                const date = new Date(timestamp);
+                timeSpan.textContent = date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+                bubble.appendChild(nicknameSpan);
+                bubble.appendChild(contentP);
+                bubble.appendChild(timeSpan);
+                messageDiv.appendChild(bubble);
+            }
+
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight; 
+        }
+        
+        // --- Gestion du Timer de Jeu ---
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function startTimer() {
+            clearInterval(gameTimerInterval);
+            remainingTime = GAME_DURATION_SECONDS; 
+            timerDisplay.textContent = formatTime(remainingTime);
+            
+            gameTimerInterval = setInterval(() => {
+                remainingTime--;
+                timerDisplay.textContent = formatTime(remainingTime);
+                
+                if (remainingTime <= 0) {
+                    clearInterval(gameTimerInterval);
+                    // TODO: Gérer la fin du jeu 
+                    displayMessage({
+                        content: "FIN DU TEMPS ! Le jeu est terminé.",
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(gameTimerInterval);
+            remainingTime = GAME_DURATION_SECONDS; 
+        }
+        
+        // --- Gestion de l'Énergie ---
+
+        function updateEnergyDisplay() {
+            // Mettre à jour l'affichage de l'énergie uniquement si le joueur est dans le chat/lobby
+            if (!chatScreen.classList.contains('hidden')) {
+                energyPointsDisplay.textContent = energyPoints;
+            }
+        }
+
+        function gainEnergy() {
+            energyPoints += ENERGY_GAIN_AMOUNT;
+            updateEnergyDisplay();
+            // TODO: Envoyer un message au serveur pour synchroniser ou pour le score final
+            console.log(`+${ENERGY_GAIN_AMOUNT} Énergie. Total: ${energyPoints}`);
+        }
 
         function startEnergyGain() {
-            if (energyGainInterval) clearInterval(energyGainInterval);
-            // Simule l'obtention d'un point d'énergie toutes les 10 secondes
-            energyGainInterval = setInterval(() => {
-                if (energy < maxEnergy) {
-                    energy++;
-                    // Mettre à jour l'affichage de l'énergie (TODO: à ajouter dans l'UI)
-                    console.log(`Énergie +1. Total: ${energy}`);
-                }
-            }, 10000); 
+            // S'assurer qu'on ne démarre le gain que si l'intervalle n'est pas déjà actif
+            if (energyInterval) return;
+
+            // Réinitialiser l'énergie au début du jeu (car l'appel est maintenant conditionnel à gameStatus == 'STARTED')
+            energyPoints = 0; 
+            updateEnergyDisplay();
+            
+            // Démarrer le nouvel intervalle de gain
+            energyInterval = setInterval(gainEnergy, ENERGY_GAIN_INTERVAL_MS);
+            console.log("Gain d'énergie démarré (10 points / 10s).");
         }
 
         function stopEnergyGain() {
-            if (energyGainInterval) {
-                clearInterval(energyGainInterval);
-                energyGainInterval = null;
+            clearInterval(energyInterval);
+            energyInterval = null;
+            console.log("Gain d'énergie stoppé.");
+        }
+
+
+        // --- Gestion de la Confirmation (inchangée) ---
+        let pendingAction = null;
+        
+        function showConfirmation(message, action) {
+            confirmMsg.textContent = message;
+            pendingAction = action;
+            confirmDialog.classList.remove('hidden');
+            confirmDialog.classList.add('flex');
+        }
+        
+        confirmActionBtn.addEventListener('click', () => {
+            confirmDialog.classList.add('hidden');
+            confirmDialog.classList.remove('flex');
+            if (pendingAction) {
+                pendingAction();
+            }
+            pendingAction = null;
+        });
+
+        cancelConfirmBtn.addEventListener('click', () => {
+            confirmDialog.classList.add('hidden');
+            confirmDialog.classList.remove('flex');
+            pendingAction = null;
+        });
+
+        // --- Logique WebSocket ---
+
+        function sendToServer(data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                if (data.action === 'CREATE_LOBBY' || data.action === 'JOIN_LOBBY') {
+                    data.userId = userId;
+                }
+                ws.send(JSON.stringify(data));
+            } else {
+                alertMessage("Connexion au serveur perdue. Veuillez actualiser.");
+                hideLoading();
             }
         }
 
-        // --- Fonctions de WebSocket et API ---
-
-        /** Initialisation de la connexion WebSocket */
         function initWebSocket() {
-            // Utilisation de l'URL de serveur fixe fournie
-            const wsUrl = WEBSOCKET_SERVER_URL; 
+            if (ws && ws.readyState === WebSocket.OPEN) return;
 
-            try {
-                ws = new WebSocket(wsUrl);
-            } catch (e) {
-                console.error("Erreur de création de WebSocket, URL invalide:", wsUrl, e);
-                displayError("Erreur de connexion (URL invalide). Veuillez vérifier le protocole.");
-                return; // Arrêter si la création échoue
-            }
-            
+            showLoading();
+            ws = new WebSocket(SERVER_ADDRESS);
 
             ws.onopen = () => {
-                console.log('Connecté au serveur WebSocket.');
-                reconnectAttempts = 0; // Réinitialiser les tentatives de reconnexion
-                
-                // Si l'utilisateur est dans un salon, tenter de s'y reconnecter (pour les déconnexions courtes)
-                if (currentRoomCode) {
-                    sendToServer({
-                        action: 'REJOIN_LOBBY',
-                        code: currentRoomCode,
-                        nickname: localStorage.getItem('nickname'),
-                        userId: userId
-                    });
-                }
+                console.log("Connecté au serveur WebSocket.");
+                hideLoading();
+                clearMessage();
             };
 
             ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleServerMessage(data);
-                } catch (e) {
-                    console.error('Erreur de parsing du message:', e, event.data);
-                }
-            };
-
-            ws.onclose = (event) => {
-                console.log('Déconnecté du serveur WebSocket.', event);
-                
-                // Tenter de se reconnecter
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    reconnectAttempts++;
-                    console.log(`Tentative de reconnexion dans ${2 ** reconnectAttempts} secondes... (Tentative ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                    setTimeout(initWebSocket, (2 ** reconnectAttempts) * 1000);
-                } else {
-                    displayError('Connexion perdue. Veuillez recharger la page.');
-                    leaveLobby(); // Revenir à l'écran d'accueil
-                }
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+                hideLoading();
             };
 
             ws.onerror = (error) => {
-                console.error('Erreur WebSocket:', error);
-                // L'erreur sera suivie d'un événement de fermeture, donc pas besoin de naviguer ici.
+                // L'objet d'erreur de la console est un Event, souvent sans détails spécifiques
+                console.error("Erreur WebSocket:", error); 
+                hideLoading(); 
+                alertMessage("Échec de la connexion ou erreur critique WebSocket. Veuillez réessayer.", true);
+            };
+
+            ws.onclose = () => {
+                console.log("Déconnexion du serveur WebSocket.");
+                if (currentRoomCode) {
+                    alertMessage("Connexion perdue. Tentative de reconnexion...", true);
+                }
+                ws = null;
+                hideLoading();
+                stopTimer(); 
+                stopEnergyGain(); // Arrêter le gain d'énergie
             };
         }
 
-        /** Envoie un message au serveur (avec vérification de l'état) */
-        function sendToServer(message) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                message.userId = userId; // Ajouter l'ID utilisateur à tous les messages sortants
-                ws.send(JSON.stringify(message));
+        /** Met à jour l'interface du lobby avec les données du serveur */
+        function updateLobbyUI(data) {
+            lobbyData = data; 
+
+            const isHost = userId === data.hostId;
+            const isGameReady = data.playerCount >= MIN_PLAYERS;
+            const isGameStarted = data.gameStatus === 'STARTED';
+            
+            // Mise à jour du compteur de joueurs
+            playerCountDisplay.textContent = data.playerCount;
+            document.getElementById('max-players').textContent = data.maxPlayers;
+            
+            // Affichage du bouton Démarrer
+            startGameBtn.classList.toggle('hidden', !isHost || isGameStarted);
+            startGameBtn.disabled = !isGameReady;
+            
+            // Mise à jour du style du bouton Démarrer (visuel)
+            if (isHost) {
+                startGameBtn.textContent = isGameReady ? 'Démarrer le Jeu' : `Min ${MIN_PLAYERS} joueurs requis`;
+            }
+
+            // Gestion de l'état du jeu
+            gameStatusBar.classList.toggle('hidden', !isGameStarted);
+            // Permettre d'écrire uniquement si le jeu est en cours
+            messageInput.disabled = !isGameStarted; 
+
+            if (isGameStarted) {
+                // Si le jeu vient de commencer et que nous n'avons pas de timer
+                if (!gameTimerInterval) {
+                    messagesContainer.innerHTML = ''; // Effacer le chat au démarrage
+                    displayMessage({
+                        content: `LE JEU COMMENCE ! Vous avez 15 minutes.`,
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                    startTimer();
+                }
+                
+                // CORRECTION 1: Le gain d'énergie commence uniquement quand le jeu est démarré.
+                if (!energyInterval) {
+                    startEnergyGain();
+                }
             } else {
-                console.error('WebSocket non connecté. Impossible d\'envoyer le message.', message);
-                displayError('Erreur de connexion. Tentative de reconnexion en cours...');
+                 // Si le jeu est arrêté ou en attente
+                 stopTimer();
+                 stopEnergyGain(); // Arrêter le gain d'énergie
+                 
+                 if (data.gameStatus === 'WAITING') {
+                     messageInput.placeholder = "En attente du lancement du jeu par l'hôte...";
+                 } else {
+                     messageInput.placeholder = "Écrivez un message...";
+                 }
             }
         }
 
-        /** Gestion des messages reçus du serveur */
-        function handleServerMessage(data) {
-            console.log('Message reçu:', data);
 
+        function handleServerMessage(data) {
             switch (data.action) {
                 case 'LOBBY_CREATED':
                 case 'LOBBY_JOINED':
                     currentRoomCode = data.code;
-                    localStorage.setItem('nickname', data.nickname); // Sauvegarder le pseudo
-                    lobbyCodeDisplay.textContent = data.code;
-                    addMessage({ action: 'SYSTEM_MESSAGE', content: `Vous avez rejoint le salon ${data.code} !`, timestamp: Date.now() });
-                    navigate('lobby');
-                    startEnergyGain();
+                    enterLobby(data.code);
+                    alertMessage(data.message, false);
+                    updateLobbyUI(data.lobby); 
+                    // Retiré: startEnergyGain(); // Le gain d'énergie est maintenant déclenché par updateLobbyUI sur 'STARTED'
                     break;
-                case 'LOBBY_LEFT':
-                    // Le serveur a confirmé la sortie
-                    leaveLobby();
-                    break;
+                
                 case 'LOBBY_UPDATE':
-                    lobbyData = data.lobby;
-                    updateLobbyUI(lobbyData);
+                    updateLobbyUI(data.lobby);
                     break;
-                case 'ERROR':
-                    displayError(`Erreur du serveur: ${data.content}`);
+                    
+                case 'LOBBY_LEFT':
+                    leaveLobby();
+                    alertMessage("Vous avez quitté le salon avec succès.", false);
                     break;
-                case 'MESSAGE':
+                
+                case 'GAME_STARTED':
+                    displayMessage({
+                        content: "L'hôte a lancé le jeu !",
+                        timestamp: Date.now(),
+                        isSystem: true
+                    });
+                    // Le LOBBY_UPDATE suivant confirmera le statut et gérera le timer/énergie
+                    break;
+
+                case 'MESSAGE_RECEIVED':
+                    displayMessage({
+                        senderId: data.senderId,
+                        senderNickname: data.senderNickname,
+                        content: data.content,
+                        timestamp: data.timestamp
+                    });
+                    break;
+                    
                 case 'SYSTEM_MESSAGE':
-                    addMessage(data);
+                    displayMessage({
+                        content: data.content,
+                        timestamp: Date.now(), 
+                        isSystem: true
+                    });
                     break;
-                // --- Gestion du Jeu ---
-                case 'GAME_STARTING':
-                    addMessage({ action: 'SYSTEM_MESSAGE', content: `Le jeu va commencer ! Distribution des rôles...`, timestamp: Date.now() });
-                    // TODO: Passer à l'écran de jeu ('game')
+
+                case 'ERROR':
+                    alertMessage(data.message, true);
                     break;
+
                 default:
-                    console.warn('Action inconnue du serveur:', data.action);
+                    console.warn("Message serveur inconnu:", data);
+                    break;
             }
         }
 
-        /** Met à jour l'interface du lobby (Gestion de l'affichage du bouton Démarrer) */
-        function updateLobbyUI(lobby) {
-            // Constante MIN_PLAYERS doit être récupérée du serveur ou du client
-            const MIN_PLAYERS = 4; // Correspond à la constante du serveur
-            const isHost = lobby.hostId === userId;
-            const playerCountValue = lobby.clients.length;
-            
-            // Le jeu ne peut démarrer que s'il y a assez de joueurs ET que le statut est 'WAITING'
-            const isReadyToStart = playerCountValue >= MIN_PLAYERS && lobby.gameStatus === 'WAITING';
+        function validateInputs(roomCode = null) {
+            const newNickname = nicknameInput.value.trim();
+            clearMessage();
 
-            // Mise à jour des infos principales
-            playerCount.textContent = `Joueurs: ${playerCountValue}`;
-            statusDisplay.textContent = lobby.gameStatus;
-            
-            // Afficher le nom de l'hôte
-            const hostClient = lobby.clients.find(c => c.id === lobby.hostId);
-            hostNameDisplay.textContent = hostClient ? hostClient.nickname : 'Inconnu';
-
-            // Afficher/Masquer le bouton Démarrer le Jeu
-            if (isHost && isReadyToStart) { 
-                startGameBtn.classList.remove('hidden');
-            } else {
-                startGameBtn.classList.add('hidden');
+            if (newNickname.length < 2 || newNickname.length > 15) {
+                alertMessage("Le pseudonyme doit contenir entre 2 et 15 caractères.");
+                return false;
             }
+            if (roomCode !== null) {
+                if (roomCode.length !== 5 || isNaN(roomCode)) {
+                    alertMessage("Le code du salon doit être un nombre de 5 chiffres.");
+                    return false;
+                }
+            }
+            saveNickname(newNickname);
+            return true;
         }
-
-        // --- Événements d'Action ---
 
         createLobbyBtn.addEventListener('click', () => {
-            const nickname = nicknameInput.value.trim();
-            if (nickname.length < 2) {
-                displayError('Veuillez entrer un pseudo d\'au moins 2 caractères.');
-                return;
-            }
+            if (!validateInputs()) return;
+            showLoading();
             sendToServer({
                 action: 'CREATE_LOBBY',
                 nickname: nickname
@@ -524,41 +643,54 @@
         });
 
         joinLobbyBtn.addEventListener('click', () => {
-            const nickname = nicknameInput.value.trim();
             const code = joinCodeInput.value.trim();
-
-            if (nickname.length < 2) {
-                displayError('Veuillez entrer un pseudo d\'au moins 2 caractères.');
-                return;
-            }
-            if (code.length !== 5 || isNaN(code)) {
-                displayError('Veuillez entrer un code de salon valide à 5 chiffres.');
-                return;
-            }
-
+            if (!validateInputs(code)) return;
+            showLoading();
             sendToServer({
                 action: 'JOIN_LOBBY',
-                nickname: nickname,
-                code: code
+                code: code,
+                nickname: nickname
             });
         });
-
+        
+        // Événement pour démarrer le jeu
         startGameBtn.addEventListener('click', () => {
-             showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Les autres joueurs devront attendre pour rejoindre.", () => {
-                 sendToServer({
-                    action: 'START_GAME'
-                });
-             });
+            if (userId === lobbyData.hostId && lobbyData.playerCount >= MIN_PLAYERS) {
+                 showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Le chat sera effacé et le timer commencera.", () => {
+                    sendToServer({
+                        action: 'START_GAME'
+                    });
+                 });
+            } else if (userId !== lobbyData.hostId) {
+                alertMessage("Seul l'hôte (le créateur du salon) peut démarrer le jeu.", true);
+            } else {
+                 alertMessage(`Il faut au moins ${MIN_PLAYERS} joueurs pour commencer.`, true);
+            }
         });
+
+
+        function enterLobby(code) {
+            currentRoomCodeDisplay.textContent = code;
+            messagesContainer.innerHTML = '';
+            joinCodeInput.value = '';
+            navigate('chat');
+            // Initialisation de l'énergie à 0 et affichage
+            energyPoints = 0;
+            updateEnergyDisplay(); 
+        }
 
         function sendMessage() {
             const content = messageInput.value.trim();
-            if (content === '') {
-                // Pas d'alerte sur mobile, juste ignorer
-                return;
+            if (content === "" || !currentRoomCode) return;
+            
+            if (lobbyData.gameStatus !== 'STARTED') {
+                 alertMessage("Le chat est désactivé tant que le jeu n'est pas démarré.", true);
+                 return;
             }
             
-            // Revenir à la mécanique de chat d'avant (simple envoi de MESSAGE)
+            // TODO: Vérifier si le joueur a assez d'énergie pour parler et la dépenser.
+            // Pour l'instant, on laisse le chat libre pour les tests.
+
             sendToServer({
                 action: 'MESSAGE',
                 content: content
@@ -579,8 +711,8 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            // TODO: stopTimer(); 
-            stopEnergyGain(); 
+            stopTimer(); 
+            stopEnergyGain(); // CORRECTION 2: S'assurer que le gain d'énergie s'arrête en quittant
             navigate('home');
             clearMessage();
         }
@@ -590,13 +722,12 @@
         sendMessageBtn.addEventListener('click', sendMessage);
 
         messageInput.addEventListener('keypress', (e) => {
-            // Gère l'envoi avec Entrée sans saut de ligne (Shift+Entrée laisse le saut de ligne)
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Enter') {
                 e.preventDefault();
                 sendMessage();
             }
         });
-
+        
         // --- Initialisation ---
         initPersistance(); 
         window.onload = initWebSocket;
