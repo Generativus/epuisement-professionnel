@@ -192,13 +192,27 @@
         // --- Navigation ---
 
         function navigate(view) {
+            console.log(`[NAV] Appel: navigate('${view}'). Tentative de modification des classes 'hidden'.`); // LOG DE DÉBOGAGE
+            
+            // NOTE: Le conteneur #app-container a 'flex flex-col' pour la vue lobby.
+            // La vue home-view a 'max-w-md mx-auto w-full' pour centrer.
+            // On s'assure que le conteneur principal reste flex pour la vue lobby, ou s'adapte pour la vue home.
+            
             homeView.classList.add('hidden');
             lobbyView.classList.add('hidden');
             
             if (view === 'home') {
                 homeView.classList.remove('hidden');
+                // Ajuster l'alignement pour centrer la page d'accueil
+                appContainer.classList.remove('flex-1', 'flex-col'); // Supprimer les classes de flexbox du lobby si besoin
+                appContainer.classList.add('flex', 'flex-col', 'items-center', 'justify-center');
+                console.log(`[NAV] Statut: homeView visible? ${!homeView.classList.contains('hidden')}`); // LOG DE DÉBOGAGE
             } else if (view === 'lobby') {
                 lobbyView.classList.remove('hidden');
+                // Réappliquer les classes pour le layout du lobby
+                appContainer.classList.remove('items-center', 'justify-center'); // Supprimer le centrage vertical/horizontal
+                appContainer.classList.add('flex', 'flex-col', 'flex-1');
+                console.log(`[NAV] Statut: lobbyView visible? ${!lobbyView.classList.contains('hidden')}`); // LOG DE DÉBOGAGE
             }
         }
 
@@ -301,19 +315,24 @@
                 case 'LOBBY_CREATED':
                 case 'LOBBY_JOINED':
                 case 'LOBBY_REJOINED':
+                    console.log(`[NAV] Succès: Tentative de navigation vers 'lobby'. Données reçues:`, data); // LOG DE DÉBOGAGE
+                    
                     // Actions communes lors de la réussite d'une connexion
                     currentRoomCode = data.code;
                     userId = data.userId;
-                    nickname = localStorage.getItem('lastNickname'); // On réutilise le nickname stocké
+                    // Note: Le nickname est déjà mis à jour au moment du clic sur 'Créer'/'Rejoindre'
+                    nickname = localStorage.getItem('lastNickname'); 
                     localStorage.setItem('currentRoomCode', currentRoomCode);
                     
                     displayFeedback(`Connecté au salon ${currentRoomCode}.`, 'green');
-                    updateLobbyUI(data.lobby);
+                    // updateLobbyUI(data.lobby); // CORRECTION 1: Retiré car le serveur n'envoie pas data.lobby ici et cela causait un crash. 
+                    // Nous nous fions à LOBBY_UPDATE qui est envoyé juste après.
                     navigate('lobby');
                     break;
                 
                 case 'LOBBY_UPDATE':
-                    updateLobbyUI(data.lobby);
+                    // CORRECTION 2: Le serveur envoie 'lobbyData', nous acceptons 'lobbyData' ou 'lobby'.
+                    updateLobbyUI(data.lobbyData || data.lobby);
                     break;
 
                 case 'LOBBY_LEFT':
@@ -562,7 +581,6 @@
             messagesContainer.innerHTML = '';
             currentRoomCode = null;
             lobbyData = {};
-            // NOTE: stopTimer() non utilisé pour l'instant
             stopEnergyGain(); // S'assurer que le gain d'énergie s'arrête en quittant
             navigate('home');
             clearMessage();
