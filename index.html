@@ -103,6 +103,11 @@
                     <p>Joueurs: <span id="players-count">0</span> / <span id="max-players">10</span></p>
                     <p>Hôte: <span id="host-id-display"></span></p>
                 </div>
+                
+                <!-- BOUTON DÉMARRER LA PARTIE (Ajouté) -->
+                <button id="start-game-btn" class="hidden w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-xl shadow-lg transition duration-150 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    Démarrer la partie
+                </button>
 
                 <div id="game-status" class="hidden flex justify-between items-center text-sm font-semibold">
                     <p id="role-display" class="text-green-600"></p>
@@ -146,6 +151,12 @@
         // L'URL de votre serveur Render
         const WS_SERVER = 'wss://webrtc-epuisement-professionnel.onrender.com';
         
+        // --- Constantes Client ---
+        const MIN_PLAYERS = 4; // Doit correspondre à la constante serveur
+        const ENERGY_CAPACITY = 5;
+        const ENERGY_GAIN_RATE = 2000; // 2000 ms = 2 secondes pour regagner 1 point
+        const ENERGY_MESSAGE_COST = 1;
+        
         let ws = null;
         let isConnected = false;
         let currentRoomCode = null;
@@ -154,9 +165,6 @@
         let lobbyData = {};
         let currentTimer = null;
         let energyInterval = null;
-        const ENERGY_CAPACITY = 5;
-        const ENERGY_GAIN_RATE = 2000; // 2000 ms = 2 secondes pour regagner 1 point
-        const ENERGY_MESSAGE_COST = 1;
         let currentEnergy = ENERGY_CAPACITY;
 
         // --- Récupération des éléments DOM ---
@@ -179,6 +187,7 @@
         const gameStatusDiv = document.getElementById('game-status');
         const roleDisplay = document.getElementById('role-display');
         const gameTimer = document.getElementById('game-timer');
+        const startGameBtn = document.getElementById('start-game-btn'); // NOUVEAU: Bouton Démarrer la partie
         
         // Modale de confirmation
         const confirmationModal = document.getElementById('confirmation-modal');
@@ -408,34 +417,42 @@
             lobbyData = lobby;
             roomCodeDisplay.textContent = lobby.code;
 
-            // CORRECTION: Ajouter une vérification pour s'assurer que lobby.clients existe.
+            // CORRECTION: Vérification pour s'assurer que lobby.clients existe.
+            const playerCount = lobby.clients ? lobby.clients.length : 0;
+            
             if (lobby.clients) {
-                playersCountDisplay.textContent = lobby.clients.length;
+                playersCountDisplay.textContent = playerCount;
 
                 const hostClient = lobby.clients.find(c => c.id === lobby.hostId);
                 hostIdDisplay.textContent = hostClient ? lobby.players[hostClient.id]?.nickname || hostClient.id : 'N/A';
-                
-                // Affichage de la liste des joueurs
-                const playersList = Object.values(lobby.players).map(p => p.nickname).join(', ');
-                // On ajoute ce message uniquement si c'est une vraie mise à jour et non le join initial qui est géré ailleurs
-                if (Object.keys(lobby.players).length > 0) {
-                    // On ne veut pas spammer le chat si l'update vient d'un simple changement d'état de jeu
-                    // Il faudrait une logique plus fine, mais pour l'instant, on laisse l'affichage pour le debug/info.
-                    // addMessage({ action: 'SYSTEM_MESSAGE', content: `Joueurs actuels: ${playersList}` });
-                }
             } else {
                 playersCountDisplay.textContent = 'Erreur de données';
                 hostIdDisplay.textContent = 'N/A';
                 console.error("Lobby data missing 'clients' array.", lobby);
             }
             
-            // Mettre à jour l'état du jeu (même si c'est la vue lobby)
-            if (lobby.gameStatus !== 'WAITING') {
-                 // Si le jeu commence, on pourrait naviguer vers une autre vue ou activer des éléments d'UI
-            }
+            // --- Gestion du Bouton Démarrer la Partie (NOUVEAU) ---
+            const isHost = lobby.hostId === userId;
+            const canStart = playerCount >= MIN_PLAYERS;
             
-            // Mettre à jour le bouton START pour l'hôte
-            // (La logique du bouton START n'est pas dans le HTML/JS initial, mais serait ajoutée ici si nécessaire)
+            startGameBtn.classList.add('hidden'); // Cacher par défaut
+            startGameBtn.disabled = true;
+
+            if (isHost && lobby.gameStatus === 'WAITING') {
+                startGameBtn.classList.remove('hidden');
+                
+                if (canStart) {
+                    startGameBtn.disabled = false;
+                    startGameBtn.textContent = 'Démarrer la partie';
+                } else {
+                    startGameBtn.disabled = true;
+                    // Afficher le nombre de joueurs manquants
+                    startGameBtn.textContent = `En attente de ${MIN_PLAYERS - playerCount} joueur(s) minimum... (4 requis)`;
+                }
+            } else {
+                 startGameBtn.classList.add('hidden');
+            }
+
 
             // Toujours mettre à jour l'énergie pour refléter l'état initial
             updateEnergyDisplay();
@@ -469,6 +486,11 @@
                 gameTimer.textContent = 'Partie terminée !';
                 stopTimer();
             }
+            
+            // Masquer le bouton de démarrage si la partie n'est plus en attente
+            if (status !== 'WAITING') {
+                startGameBtn.classList.add('hidden');
+            }
         }
         
         function stopTimer() {
@@ -481,6 +503,16 @@
         messageForm.addEventListener('submit', (e) => {
             e.preventDefault();
             sendMessage();
+        });
+        
+        // NOUVEAU: Événement pour le bouton de démarrage
+        startGameBtn.addEventListener('click', () => {
+            if (startGameBtn.disabled) return;
+            showConfirmation("Confirmez-vous le lancement de la partie ? Tous les joueurs seront notifiés.", () => {
+                sendToServer({
+                    action: 'START_GAME'
+                });
+            });
         });
 
         /** Gère la tentative de rejoindre un salon. */
@@ -515,6 +547,7 @@
             if (!isConnected) {
                 displayError('Pas connecté au serveur. Veuillez réessayer.');
                 return;
+                
             }
 
             const nick = nicknameInput.value.trim();
