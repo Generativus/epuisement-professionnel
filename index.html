@@ -91,7 +91,7 @@
                 </ul>
             </div>
             
-            <!-- Bouton Démarrer Jeu (RESTAURÉ) -->
+            <!-- Bouton Démarrer Jeu -->
             <button id="start-game-btn" disabled
                     class="w-full p-3 bg-red-600 text-white font-semibold rounded-lg shadow hover:bg-red-700 transition duration-150 disabled:bg-red-300 mb-4 hidden">
                 Démarrer le Jeu (Min 4 joueurs)
@@ -318,7 +318,7 @@
                     console.log(`[NAV] Succès: Tentative de navigation vers 'lobby'. Données reçues:`, data); // LOG DE DÉBOGAGE
                     
                     // Actions communes lors de la réussite d'une connexion
-                    // On suppose que data.code et data.userId sont toujours présents.
+                    // IMPORTANT: Mettre à jour userId ici est CRUCIAL pour la logique hôte/bouton Démarrer
                     currentRoomCode = data.code;
                     userId = data.userId; 
                     nickname = localStorage.getItem('lastNickname'); 
@@ -417,16 +417,17 @@
             
             // Gestion du badge Hôte et du bouton Démarrer
             const isHost = userId === lobby.hostId;
+            const canStart = lobby.clients.length >= MIN_PLAYERS;
+
             if (isHost) {
+                // Si l'utilisateur est l'hôte
                 hostBadge.classList.remove('hidden');
-                startGameBtn.classList.remove('hidden'); // RESTAURÉ: S'assurer qu'il est visible pour l'hôte
-                
-                // Mettre à jour l'état du bouton Démarrer
-                const canStart = lobby.clients.length >= MIN_PLAYERS;
-                startGameBtn.disabled = !canStart;
+                startGameBtn.classList.remove('hidden'); // Le bouton doit être visible
+                startGameBtn.disabled = !canStart; // L'état désactivé dépend du nombre de joueurs
             } else {
+                // Si l'utilisateur est un invité
                 hostBadge.classList.add('hidden');
-                startGameBtn.classList.add('hidden'); // S'assurer qu'il est caché pour les invités
+                startGameBtn.classList.add('hidden'); // Le bouton doit être masqué
             }
             
             // S'assurer que le gain d'énergie est actif une fois dans le lobby
