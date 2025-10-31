@@ -92,7 +92,7 @@
         <!-- Écran de Chat (Lobby/Jeu) -->
         <div id="chat-screen" class="hidden flex-col flex-grow">
             
-            <!-- NOUVEAU: Barre de menu du jeu/lobby -->
+            <!-- Barre de menu du jeu/lobby -->
             <header id="game-menu-bar" class="p-3 bg-gray-900 text-white flex flex-col sm:flex-row items-center justify-between shadow-lg">
                 <div class="flex items-center space-x-4 mb-2 sm:mb-0 w-full sm:w-auto justify-between">
                     <h2 class="text-lg font-bold">Salon <span id="current-room-code" class="ml-1 bg-blue-600 text-white text-sm font-mono tracking-widest px-2 py-0.5 rounded"></span></h2>
@@ -114,7 +114,7 @@
                 </div>
             </header>
 
-            <!-- NOUVEAU: Affichage de l'état du jeu et du timer -->
+            <!-- Affichage de l'état du jeu et du timer -->
             <div id="game-status-bar" class="p-3 bg-yellow-100 text-center text-gray-800 font-bold border-b border-yellow-300 hidden">
                 <p id="game-status-text">
                     <span id="timer-display" class="text-xl text-red-600 font-extrabold font-mono">15:00</span> - Débat en cours
@@ -202,7 +202,7 @@
         const messageInput = document.getElementById('message-input');
         const sendMessageBtn = document.getElementById('send-message-btn');
         const currentRoomCodeDisplay = document.getElementById('current-room-code');
-        const currentNicknameDisplay = document.getElementById('current-nickname');
+        // FIX: Suppression de la référence `currentNicknameDisplay` qui n'existe plus dans le DOM.
         const loadingOverlay = document.getElementById('loading-overlay');
         
         const confirmDialog = document.getElementById('confirmation-dialog');
@@ -405,8 +405,9 @@
 
             ws.onerror = (error) => {
                 console.error("Erreur WebSocket:", error);
-                alertMessage("Échec de la connexion au serveur. Assurez-vous que le serveur est démarré à l'adresse correcte.", true);
-                hideLoading();
+                // Le client se figeait ici. hideLoading() est déplacé pour être certain que le chargement se masque.
+                hideLoading(); 
+                alertMessage("Échec de la connexion ou erreur critique WebSocket. Veuillez réessayer.", true);
             };
 
             ws.onclose = () => {
@@ -420,7 +421,7 @@
             };
         }
 
-        /** NOUVEAU: Met à jour l'interface du lobby avec les données du serveur */
+        /** Met à jour l'interface du lobby avec les données du serveur */
         function updateLobbyUI(data) {
             lobbyData = data; // Stocker les données du lobby
 
@@ -430,7 +431,7 @@
             
             // Mise à jour du compteur de joueurs
             playerCountDisplay.textContent = data.playerCount;
-            document.getElementById('max-players').textContent = data.maxPlayers; // maxPlayers est défini à 10 dans le serveur
+            document.getElementById('max-players').textContent = data.maxPlayers;
             
             // Affichage du bouton Démarrer
             startGameBtn.classList.toggle('hidden', !isHost || isGameStarted);
@@ -443,7 +444,8 @@
 
             // Gestion de l'état du jeu
             gameStatusBar.classList.toggle('hidden', !isGameStarted);
-            messageInput.disabled = isGameStarted ? false : true; // Désactiver l'input s'il n'y a pas de jeu ou si le jeu est en pause.
+            // Permettre d'écrire uniquement si le jeu est en cours
+            messageInput.disabled = !isGameStarted; 
 
             if (isGameStarted) {
                 // Si le jeu vient de commencer et que nous n'avons pas de timer
@@ -459,6 +461,12 @@
             } else {
                  // Si le jeu est arrêté ou en attente
                  stopTimer();
+                 // Si le jeu est en attente, le chat est désactivé
+                 if (data.gameStatus === 'WAITING') {
+                     messageInput.placeholder = "En attente du lancement du jeu par l'hôte...";
+                 } else {
+                     messageInput.placeholder = "Écrivez un message...";
+                 }
             }
         }
 
@@ -474,7 +482,7 @@
                     break;
                 
                 case 'LOBBY_UPDATE':
-                    // NOUVEAU: Réception des données du lobby en temps réel
+                    // Réception des données du lobby en temps réel
                     updateLobbyUI(data.lobby);
                     break;
                     
@@ -557,7 +565,7 @@
             });
         });
         
-        // NOUVEAU: Événement pour démarrer le jeu
+        // Événement pour démarrer le jeu
         startGameBtn.addEventListener('click', () => {
             if (userId === lobbyData.hostId && lobbyData.playerCount >= MIN_PLAYERS) {
                  showConfirmation("Êtes-vous sûr de vouloir démarrer le jeu ? Le chat sera effacé et le timer commencera.", () => {
@@ -575,7 +583,7 @@
 
         function enterLobby(code) {
             currentRoomCodeDisplay.textContent = code;
-            currentNicknameDisplay.textContent = nickname;
+            // FIX: La ligne qui causait l'erreur est supprimée
             messagesContainer.innerHTML = '';
             joinCodeInput.value = '';
             navigate('chat');
@@ -585,9 +593,12 @@
             const content = messageInput.value.trim();
             if (content === "" || !currentRoomCode) return;
             
-            // Ne pas permettre d'envoyer si le jeu n'est pas démarré (peut être ajusté plus tard)
+            // Vérification simple côté client pour l'état du jeu
             if (lobbyData.gameStatus !== 'STARTED') {
-                 return alertMessage("Le jeu n'a pas encore commencé. Attendez l'hôte.", true);
+                 // Afficher le message d'erreur directement car l'input est désactivé si non-STARTED, 
+                 // mais on garde la vérification par sécurité.
+                 alertMessage("Le chat est désactivé tant que le jeu n'est pas démarré.", true);
+                 return;
             }
 
             sendToServer({
