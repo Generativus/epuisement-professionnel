@@ -1,7 +1,6 @@
 /**
  * Serveur WebSocket pour l'application de jeu de déduction sociale.
  * * Ajout de la gestion de l'hôte, de l'état du jeu et de la synchronisation des données de lobby.
- * * NOUVEAU: Logique complète de jeu (manches, énergie, travail d'équipe, vote).
  */
 
 const WebSocket = require('ws');
@@ -10,42 +9,23 @@ const WebSocket = require('ws');
 const PORT = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port: PORT });
 
-// --- Constantes de Jeu ---
+// Constantes de Jeu
 const MIN_PLAYERS = 4;
 const MAX_PLAYERS = 10;
-const TOTAL_ROUNDS = 3;
-const ROUND_DURATION = 900; // 15 minutes en secondes (900s)
-
-// Énergie et Coûts
-const MAX_ENERGY = 100;
-const ENERGY_GAIN_RATE = 10000; // 10 secondes en ms
-const ENERGY_GAIN_AMOUNT = 10;
-const ENERGY_MESSAGE_COST = 1;
-const WORK_COST = 200; // Coût total d'un rapport
-
-// Objectifs
-const WORK_GOAL = 200; // Points de travail à atteindre par manche
+const ENERGY_COST_MESSAGE = 1; // Coût en énergie pour envoyer un message
+const ENERGY_GAIN_PER_SECOND = 0.5; // Gain d'énergie par seconde
+// Pas de MAX_ENERGY, l'énergie peut s'accumuler indéfiniment.
 
 const GAME_STATUS = {
     WAITING: 'WAITING',
-    STARTED: 'STARTED', // Manche en cours
-    VOTING: 'VOTING',   // Phase de vote
-    ENDED: 'ENDED'      // Jeu terminé
+    STARTED: 'STARTED',
+    VOTING: 'VOTING',
+    ENDED: 'ENDED',
+    ROUND_END: 'ROUND_END' // Nouvel état pour gérer la fin de manche et la conservation de l'énergie
 };
 
 // Structure pour gérer les salons et les clients connectés.
-// Format: { 
-//   'code': { 
-//      code: '12345', hostId: 'uuid', clients: [ws1, ws2], gameStatus: 'WAITING', 
-//      currentRound: 0, jobPointsGoal: 200, currentJobPoints: 0, roundTimer: 0, 
-//      gameTimerInterval: null, energyInterval: null,
-//      pendingWork: { proposerId: null, targetIds: [], targetNames: [], costPerPlayer: 0, contributions: {} },
-//      votes: {}, // { voterId: targetId }
-//      players: { 
-//          'userId': { nickname: 'name', role: null, energy: 100, jobPoints: 0, totalScore: 0 } 
-//      } 
-//   } 
-// }
+// Format: { 'code': { code: '12345', hostId: 'uuid', clients: [ws1, ws2], gameStatus: 'WAITING', players: { 'userId': { nickname: 'name', role: null, energy: 0, score: 0 } }, gameData: { currentRound: 0, roundTimer: null, patronneMessageInterval: null, previousPlayersData: {} } } }
 const codeToLobbyMap = new Map();
 
 console.log(`Serveur WebSocket démarré sur le port ${PORT}`);
@@ -56,807 +36,469 @@ console.log(`Serveur WebSocket démarré sur le port ${PORT}`);
 function generateUniqueCode() {
     let code;
     do {
+        // Génère un nombre entre 10000 et 99999
         code = Math.floor(10000 + Math.random() * 90000).toString();
     } while (codeToLobbyMap.has(code));
     return code;
 }
 
 /** Envoie un message à un client spécifique. */
-function sendToClient(client, message) {
-    if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify(message));
+function sendToClient(ws, data) {
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
     }
 }
 
-/** Diffuse un message à tous les clients d'un salon. */
-function broadcastToLobby(code, message) {
+/** Envoie un message à tous les clients d'un salon. */
+function broadcastToLobby(code, data) {
     const lobby = codeToLobbyMap.get(code);
     if (lobby) {
         lobby.clients.forEach(client => {
-            sendToClient(client, message);
+            sendToClient(client, data);
         });
     }
 }
 
-/** Envoie une mise à jour complète du lobby à tous les clients. */
-function sendLobbyUpdate(code, specificData = {}) {
+/** Met à jour et envoie les données de lobby à tous les clients. */
+function sendLobbyUpdate(code) {
     const lobby = codeToLobbyMap.get(code);
-    if (!lobby) return;
-
-    // Créer une version sérialisable du lobby sans les objets ws
-    const serializableLobby = {
-        code: lobby.code,
-        hostId: lobby.hostId,
-        gameStatus: lobby.gameStatus,
-        currentRound: lobby.currentRound,
-        jobPointsGoal: lobby.jobPointsGoal,
-        currentJobPoints: lobby.currentJobPoints,
-        players: lobby.players,
-        clients: lobby.clients.map(c => ({ id: c.userId, code: c.lobbyCode }))
-    };
-
-    lobby.clients.forEach(client => {
-        // Envoi des données spécifiques au joueur (énergie) via GAME_STATUS_UPDATE
-        sendToClient(client, {
-            action: 'GAME_STATUS_UPDATE',
-            status: lobby.gameStatus,
-            currentRound: lobby.currentRound,
-            totalRounds: TOTAL_ROUNDS,
-            timer: lobby.roundTimer,
-            currentJobPoints: lobby.currentJobPoints,
-            jobPointsGoal: lobby.jobPointsGoal,
-            playerState: lobby.players[client.userId], // Inclut l'énergie
-            ...specificData
-        });
-    });
-
-    // Mettre à jour le lobby UI général (qui n'inclut pas les infos de jeu)
-    broadcastToLobby(code, {
-        action: 'LOBBY_UPDATE',
-        lobby: serializableLobby
-    });
+    if (lobby) {
+        const payload = {
+            action: 'LOBBY_UPDATE',
+            lobbyData: {
+                code: lobby.code,
+                hostId: lobby.hostId,
+                gameStatus: lobby.gameStatus,
+                players: Object.values(lobby.players).map(player => ({
+                    id: player.id,
+                    nickname: player.nickname,
+                    isHost: player.id === lobby.hostId,
+                    energy: player.energy, // Inclure l'énergie dans l'update
+                    score: player.score,
+                    role: lobby.gameStatus === GAME_STATUS.STARTED ? player.role : null // Masquer les rôles
+                }))
+            }
+        };
+        broadcastToLobby(code, payload);
+    }
 }
 
-// --- Logique de Jeu (Manches, Timer, Points) ---
-
-/** Initialise ou réinitialise une manche. */
-function startNewRound(code) {
+/** Génère un message de la Patronne (maintenant un message normal). */
+function sendPatronneMessage(code, content) {
     const lobby = codeToLobbyMap.get(code);
-    if (!lobby) return;
+    if (lobby) {
+        // POINT 3: Envoi du message de la Patronne comme un message de chat normal.
+        broadcastToLobby(code, {
+            action: 'MESSAGE',
+            sender: 'La Patronne', // Le nom de l'expéditeur
+            content: content,
+            timestamp: Date.now(),
+            isPatronne: true // Flag pour l'affichage (optionnel, mais bon pour la clarté)
+        });
+    }
+}
 
-    lobby.currentRound++;
+/** Gère le gain d'énergie pour tous les joueurs. */
+function startEnergyGain(code) {
+    const lobby = codeToLobbyMap.get(code);
+    if (lobby && !lobby.gameData.energyInterval) {
+        lobby.gameData.energyInterval = setInterval(() => {
+            if (lobby.gameStatus === GAME_STATUS.STARTED) {
+                Object.keys(lobby.players).forEach(userId => {
+                    const player = lobby.players[userId];
+                    // POINT 1: Pas de MAX_ENERGY, l'énergie augmente simplement
+                    player.energy = (player.energy || 0) + ENERGY_GAIN_PER_SECOND;
+                });
+                sendLobbyUpdate(code);
+            }
+        }, 1000); // Mise à jour chaque seconde
+        console.log(`Gain d'énergie démarré pour le salon ${code}.`);
+    }
+}
+
+/** Arrête le gain d'énergie. */
+function stopEnergyGain(code) {
+    const lobby = codeToLobbyMap.get(code);
+    if (lobby && lobby.gameData.energyInterval) {
+        clearInterval(lobby.gameData.energyInterval);
+        lobby.gameData.energyInterval = null;
+        console.log(`Gain d'énergie arrêté pour le salon ${code}.`);
+    }
+}
+
+/** Démarre le jeu. */
+function startGame(code) {
+    const lobby = codeToLobbyMap.get(code);
+    if (!lobby || lobby.gameStatus !== GAME_STATUS.WAITING || lobby.clients.length < MIN_PLAYERS) {
+        console.log(`Impossible de démarrer le jeu dans le salon ${code}. (Statut: ${lobby.gameStatus}, Joueurs: ${lobby.clients.length})`);
+        return;
+    }
+
+    // POINT 2: Conservation de l'énergie de la manche précédente
+    const previousPlayersData = lobby.gameData.previousPlayersData || {};
+
+    // Initialisation des rôles, de l'énergie et du score pour la nouvelle manche
+    const roles = ['Patronne', 'Employée']; // Exemple de rôles
+    const rolesToAssign = [];
+    rolesToAssign.push('Patronne'); // 1 Patronne
+    for (let i = 0; i < lobby.clients.length - 1; i++) {
+        rolesToAssign.push('Employée'); // Reste des Employées
+    }
+    
+    // Mélange des rôles
+    rolesToAssign.sort(() => Math.random() - 0.5);
+
+    let roleIndex = 0;
+    Object.keys(lobby.players).forEach(userId => {
+        const player = lobby.players[userId];
+        player.role = rolesToAssign[roleIndex++];
+        player.score = player.score || 0; // Conserve le score total
+        
+        // Initialiser l'énergie: utiliser l'énergie conservée, sinon 5 par défaut
+        const conservedEnergy = previousPlayersData[userId] ? previousPlayersData[userId].energy : 5;
+        player.energy = conservedEnergy;
+    });
+
     lobby.gameStatus = GAME_STATUS.STARTED;
-    lobby.currentJobPoints = 0;
-    lobby.roundTimer = ROUND_DURATION;
-    lobby.jobPointsGoal = WORK_GOAL;
-    lobby.pendingWork = { proposerId: null, targetIds: [], targetNames: [], costPerPlayer: 0, contributions: {} };
-    lobby.votes = {};
-
-    // Réinitialiser les scores des joueurs pour la manche
-    for (const userId in lobby.players) {
-        lobby.players[userId].energy = MAX_ENERGY; // Réinitialiser l'énergie
-        lobby.players[userId].roundScore = 0; // Nouveau score pour suivre la performance de la manche
-        // Assigner les rôles si besoin (non implémenté ici)
-    }
-
-    startEnergyTimer(code);
-    startRoundTimer(code);
-    
-    // Message de la Patrone
-    broadcastToLobby(code, {
-        action: 'SYSTEM_MESSAGE',
-        nickname: 'Patrone',
-        content: `Manche ${lobby.currentRound} : Bienvenue ! L'objectif de points de travail est de ${WORK_GOAL}. Vous avez 15 minutes. Au travail !`
-    });
-
-    sendLobbyUpdate(code);
-}
-
-/** Démarre le gain d'énergie. */
-function startEnergyTimer(code) {
-    const lobby = codeToLobbyMap.get(code);
-    if (lobby.energyInterval) clearInterval(lobby.energyInterval);
-
-    lobby.energyInterval = setInterval(() => {
-        let needsUpdate = false;
-        lobby.clients.forEach(client => {
-            const player = lobby.players[client.userId];
-            if (player && player.energy < MAX_ENERGY) {
-                player.energy = Math.min(MAX_ENERGY, player.energy + ENERGY_GAIN_AMOUNT);
-                needsUpdate = true;
-            }
-        });
-
-        if (needsUpdate) {
-            sendLobbyUpdate(code); // Mettre à jour l'énergie des joueurs
-        }
-    }, ENERGY_GAIN_RATE);
-}
-
-/** Démarre le chronomètre de la manche. */
-function startRoundTimer(code) {
-    const lobby = codeToLobbyMap.get(code);
-    if (lobby.gameTimerInterval) clearInterval(lobby.gameTimerInterval);
-
-    lobby.gameTimerInterval = setInterval(() => {
-        if (lobby.roundTimer > 0) {
-            lobby.roundTimer--;
-            sendLobbyUpdate(code);
-            
-            // Vérification de la condition de fin de manche (temps écoulé)
-            if (lobby.roundTimer <= 0) {
-                clearInterval(lobby.gameTimerInterval);
-                endRound(code, false); // Échoué par manque de temps
-            }
-        }
-    }, 1000);
-}
-
-/** Arrête les timers. */
-function stopLobbyTimers(code) {
-    const lobby = codeToLobbyMap.get(code);
-    if (lobby.gameTimerInterval) clearInterval(lobby.gameTimerInterval);
-    if (lobby.energyInterval) clearInterval(lobby.energyInterval);
-    lobby.gameTimerInterval = null;
-    lobby.energyInterval = null;
-}
-
-/** Gère la fin de la manche. */
-function endRound(code, isSuccessful) {
-    const lobby = codeToLobbyMap.get(code);
-    if (!lobby || lobby.gameStatus === GAME_STATUS.ENDED) return;
-    
-    stopLobbyTimers(code);
-
-    // Mettre à jour le score total avec l'énergie finale de la manche
-    for (const userId in lobby.players) {
-        lobby.players[userId].roundScore = lobby.players[userId].energy;
-    }
-
-    if (isSuccessful) {
-        startVotingPhase(code);
-    } else {
-        // Manche non réussie
-        handleFailedRound(code);
-    }
-}
-
-// --- Phase de Vote (Manche Réussie) ---
-
-function startVotingPhase(code) {
-    const lobby = codeToLobbyMap.get(code);
-    lobby.gameStatus = GAME_STATUS.VOTING;
-    lobby.votes = {};
-
-    // 1. Collecter les scores d'énergie et les rendre anonymes
-    const energyScores = lobby.clients.map(client => lobby.players[client.userId].energy);
-    // Triez pour l'anonymat, puis affichez
-    energyScores.sort((a, b) => b - a); // Du plus élevé au plus bas
-
-    const scoreList = energyScores.map((score, index) => `Joueur ${index + 1} : ${score}`).join('\n');
-    const playerNicknames = lobby.clients.map(client => lobby.players[client.userId].nickname).join(', ');
-
-    // 2. Message de la Patrone
-    broadcastToLobby(code, {
-        action: 'SYSTEM_MESSAGE',
-        nickname: 'Patrone',
-        content: `Félicitations, l'objectif est atteint ! Voici l'énergie finale des joueurs :\n${scoreList}\n\nVotez pour le joueur le plus fainéant (celui qui a le plus d'énergie non dépensée) en écrivant "vote [Pseudonyme]". Options: ${playerNicknames}`
-    });
-
-    sendLobbyUpdate(code);
-}
-
-function handleVote(ws, data) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-    if (!lobby || lobby.gameStatus !== GAME_STATUS.VOTING) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Le vote n\'est pas en cours.' });
-    }
-
-    const targetNickname = data.targetNickname;
-    const targetClient = lobby.clients.find(c => lobby.players[c.userId].nickname.toLowerCase() === targetNickname.toLowerCase());
-    
-    if (!targetClient) {
-        return sendToClient(ws, { action: 'ERROR', content: `Le joueur "${targetNickname}" n'a pas été trouvé.` });
-    }
-
-    // Enregistrement du vote
-    lobby.votes[ws.userId] = targetClient.userId;
-
-    sendToClient(ws, { action: 'SYSTEM_MESSAGE', content: `Vous avez voté pour ${targetNickname}.` });
-    
-    // Vérification de la fin du vote
-    if (Object.keys(lobby.votes).length === lobby.clients.length) {
-        processVoteResults(code);
-    }
-}
-
-function processVoteResults(code) {
-    const lobby = codeToLobbyMap.get(code);
-    let voteCounts = {};
-    let highestVotes = 0;
-    let laziestPlayerId = null;
-
-    // Compter les votes
-    for (const voterId in lobby.votes) {
-        const targetId = lobby.votes[voterId];
-        voteCounts[targetId] = (voteCounts[targetId] || 0) + 1;
-        if (voteCounts[targetId] > highestVotes) {
-            highestVotes = voteCounts[targetId];
-            laziestPlayerId = targetId;
-        }
-    }
-    
-    // Trouver le nickname du joueur sanctionné
-    const laziestPlayerNickname = lobby.players[laziestPlayerId]?.nickname || 'Inconnu';
-
-    // Sanction: Le joueur perd tous les points accumulés lors de cette manche.
-    // Dans notre cas, cela signifie que son score final (énergie) pour la manche est ramené à 0.
-    if (laziestPlayerId) {
-        const oldScore = lobby.players[laziestPlayerId].roundScore;
-        lobby.players[laziestPlayerId].roundScore = 0;
-        
-        broadcastToLobby(code, {
-            action: 'SYSTEM_MESSAGE',
-            nickname: 'Patrone',
-            content: `Le vote est terminé. ${laziestPlayerNickname} est jugé le plus fainéant (avec ${highestVotes} votes). Sanction: ses points de cette manche (${oldScore} Énergie) sont perdus !`
-        });
-    } else {
-        broadcastToLobby(code, {
-            action: 'SYSTEM_MESSAGE',
-            nickname: 'Patrone',
-            content: 'Le vote est terminé, mais il y a eu égalité ou une erreur. Pas de sanction cette fois.'
-        });
-    }
-
-    // Ajouter le score de la manche au score total
-    for (const userId in lobby.players) {
-        lobby.players[userId].totalScore += lobby.players[userId].roundScore;
-    }
-
-    // Passer à la manche suivante ou terminer le jeu
-    setTimeout(() => {
-        if (lobby.currentRound < TOTAL_ROUNDS) {
-            startNewRound(code);
-        } else {
-            endGame(code);
-        }
-    }, 5000); // 5 secondes pour que les joueurs lisent le résultat
-}
-
-// --- Phase de Manque de Temps (Manche Échouée) ---
-
-function handleFailedRound(code) {
-    const lobby = codeToLobbyMap.get(code);
+    lobby.gameData.currentRound++;
+    lobby.gameData.previousPlayersData = {}; // Réinitialiser pour la prochaine conservation
 
     broadcastToLobby(code, {
         action: 'SYSTEM_MESSAGE',
-        nickname: 'Patrone',
-        content: 'Manche échouée ! Je ne suis pas fière de cette performance. En punition, les scores d\'énergie (points) du joueur le plus faible et du joueur le plus fort sont inversés !'
+        content: `Le jeu commence ! Manche n°${lobby.gameData.currentRound}. Bonne chance.`
     });
 
-    // Inversion des scores basés sur l'énergie de fin de manche
-    let playersArray = Object.values(lobby.players).map(p => ({ ...p }));
-    playersArray.sort((a, b) => a.energy - b.energy); // Trier par énergie (du plus faible au plus fort)
+    startEnergyGain(code); // Commence le gain d'énergie
+    // TODO: Démarrer le timer de la manche et les événements de la Patronne
     
-    if (playersArray.length >= 2) {
-        const lowestEnergyPlayer = playersArray[0];
-        const highestEnergyPlayer = playersArray[playersArray.length - 1];
-
-        // Inversion (seuls les scores de la manche sont inversés)
-        const tempScore = lowestEnergyPlayer.roundScore;
-        
-        // Mettre à jour les scores de la manche dans le lobby
-        const lowId = lobby.clients.find(c => lobby.players[c.userId].nickname === lowestEnergyPlayer.nickname)?.userId;
-        const highId = lobby.clients.find(c => lobby.players[c.userId].nickname === highestEnergyPlayer.nickname)?.userId;
-
-        if (lowId && highId) {
-            lobby.players[lowId].roundScore = highestEnergyPlayer.roundScore;
-            lobby.players[highId].roundScore = tempScore;
-
-            broadcastToLobby(code, {
-                action: 'SYSTEM_MESSAGE',
-                content: `Inversion: ${lowestEnergyPlayer.nickname} reçoit ${lobby.players[lowId].roundScore} points et ${highestEnergyPlayer.nickname} reçoit ${lobby.players[highId].roundScore} points.`
-            });
-        }
-    }
-
-    // Ajouter le score de la manche au score total
-    for (const userId in lobby.players) {
-        lobby.players[userId].totalScore += lobby.players[userId].roundScore;
-    }
-
-    // Passer à la manche suivante ou terminer le jeu
-    setTimeout(() => {
-        if (lobby.currentRound < TOTAL_ROUNDS) {
-            startNewRound(code);
-        } else {
-            endGame(code);
-        }
-    }, 5000);
+    sendLobbyUpdate(code); // Envoie l'update avec les rôles (visibles par le joueur lui-même)
 }
 
-// --- Fin de Jeu ---
-
-function endGame(code) {
+/** Démarre la manche suivante. */
+function startNextRound(code) {
     const lobby = codeToLobbyMap.get(code);
-    lobby.gameStatus = GAME_STATUS.ENDED;
+    if (!lobby || lobby.gameStatus !== GAME_STATUS.ROUND_END) return;
 
-    let winner = null;
-    let maxScore = -1;
-
-    // Trouver le joueur avec le score total le plus élevé
-    for (const userId in lobby.players) {
-        if (lobby.players[userId].totalScore > maxScore) {
-            maxScore = lobby.players[userId].totalScore;
-            winner = lobby.players[userId];
-        }
-    }
-    
-    const finalScores = Object.values(lobby.players).map(p => `${p.nickname}: ${p.totalScore} pts`).join('\n');
+    // POINT 2: Conserver l'énergie avant de démarrer la prochaine manche
+    Object.keys(lobby.players).forEach(userId => {
+        const player = lobby.players[userId];
+        lobby.gameData.previousPlayersData[userId] = {
+            energy: player.energy // Conserve la valeur actuelle d'énergie
+        };
+    });
 
     broadcastToLobby(code, {
         action: 'SYSTEM_MESSAGE',
-        nickname: 'Patrone',
-        content: `**FIN DU JEU !**\nScores finaux:\n${finalScores}\n\nFélicitations, ${winner.nickname} ! Votre excellente gestion de l'énergie et votre travail acharné vous valent une promotion !`
+        content: `Préparation de la manche suivante...`
     });
+
+    // Remettre le statut à WAITING (ou STARTED directement si on veut enchainer)
+    // Ici, on remet à WAITING pour que l'hôte puisse cliquer à nouveau sur Démarrer
+    lobby.gameStatus = GAME_STATUS.WAITING; 
+    
+    // Si on veut enchainer directement:
+    // startGame(code);
 
     sendLobbyUpdate(code);
 }
 
 
-// --- Logique de Travail d'Équipe ---
+// --- Gestionnaire d'événements WebSocket ---
 
-function handleTeamworkProposal(ws, data) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-    if (!lobby || lobby.gameStatus !== GAME_STATUS.STARTED) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Le travail d\'équipe ne peut être lancé que pendant une manche.' });
-    }
-    if (lobby.pendingWork.proposerId) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Un travail d\'équipe est déjà en cours de proposition.' });
-    }
-
-    // Format: "rapport [nom1] [nom2] ..."
-    const targetNames = data.content.substring(8).split(' ').filter(n => n.trim() !== '');
-
-    if (targetNames.length === 0) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Vous devez nommer au moins un joueur pour un rapport d\'équipe.' });
-    }
-    
-    // Identifier les joueurs ciblés et vérifier l'énergie
-    const allNames = [...targetNames, ws.nickname];
-    const targetClients = [];
-    const targetUserIds = [];
-    
-    for (const name of allNames) {
-        const client = lobby.clients.find(c => c.nickname.toLowerCase() === name.toLowerCase());
-        if (!client) {
-            return sendToClient(ws, { action: 'ERROR', content: `Joueur "${name}" non trouvé.` });
-        }
-        if (client.userId !== ws.userId) {
-            targetClients.push(client);
-            targetUserIds.push(client.userId);
-        }
-    }
-    
-    if (allNames.length < 2) {
-         return sendToClient(ws, { action: 'ERROR', content: 'Minimum deux joueurs (vous-même inclus) sont nécessaires pour un travail d\'équipe.' });
-    }
-
-    const totalPlayers = allNames.length;
-    const costPerPlayer = WORK_COST / totalPlayers;
-    
-    // Vérification de l'énergie (proposer doit avoir assez)
-    if (lobby.players[ws.userId].energy < costPerPlayer) {
-         return sendToClient(ws, { action: 'ERROR', content: `Vous n'avez pas assez d'énergie (${costPerPlayer} requis) pour proposer ce travail.` });
-    }
-    
-    // Initialiser la proposition
-    lobby.pendingWork = {
-        proposerId: ws.userId,
-        targetIds: targetUserIds,
-        targetNames: targetNames,
-        costPerPlayer: costPerPlayer,
-        contributions: { [ws.userId]: 'oui' } // L'initiateur accepte automatiquement
-    };
-
-    // Notifier les joueurs ciblés
-    targetClients.forEach(client => {
-        sendToClient(client, {
-            action: 'WORK_PROPOSAL',
-            proposerNickname: ws.nickname,
-            targetNames: allNames // Envoyer tous les noms pour affichage
-        });
-    });
-
-    sendToClient(ws, { action: 'SYSTEM_MESSAGE', content: `Proposition de travail d'équipe envoyée à ${targetNames.join(', ')}. En attente de leurs réponses...` });
-}
-
-function handleTeamworkResponse(ws, data) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-    if (!lobby || lobby.gameStatus !== GAME_STATUS.STARTED || !lobby.pendingWork.proposerId) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Aucun travail d\'équipe en cours.' });
-    }
-    
-    // Si ce client n'est pas ciblé, ignorer
-    if (lobby.pendingWork.targetIds.indexOf(ws.userId) === -1) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Cette proposition ne vous concerne pas.' });
-    }
-    
-    const response = data.response; // "oui" ou "non"
-
-    if (response === 'non') {
-        // Un joueur refuse, annuler le travail
-        const proposerNickname = lobby.players[lobby.pendingWork.proposerId]?.nickname || 'L\'hôte';
-        broadcastToLobby(code, {
-            action: 'SYSTEM_MESSAGE',
-            content: `Le travail d'équipe pour le rapport (proposé par ${proposerNickname}) a été refusé par ${ws.nickname}.`
-        });
-        lobby.pendingWork = { proposerId: null, targetIds: [], targetNames: [], costPerPlayer: 0, contributions: {} };
-    } else if (response === 'oui') {
-        // Enregistrer l'acceptation
-        lobby.pendingWork.contributions[ws.userId] = 'oui';
-        sendToClient(ws, { action: 'SYSTEM_MESSAGE', content: 'Vous avez accepté le travail d\'équipe.' });
-        
-        // Vérifier si tout le monde a accepté
-        const requiredAcceptances = lobby.pendingWork.targetIds.length + 1; // Tous les ciblés + le proposant
-        const currentAcceptances = Object.keys(lobby.pendingWork.contributions).length;
-
-        if (currentAcceptances === requiredAcceptances) {
-            // Tous ont accepté, passer à la phase de contribution
-            const allPlayerIds = [lobby.pendingWork.proposerId, ...lobby.pendingWork.targetIds];
-            
-            // Notifier les joueurs d'entrer leur contribution
-            allPlayerIds.forEach(id => {
-                 const client = lobby.clients.find(c => c.userId === id);
-                 if (client) {
-                    sendToClient(client, {
-                        action: 'REQUEST_WORK_CONTRIBUTION',
-                        cost: lobby.pendingWork.costPerPlayer 
-                    });
-                 }
-            });
-            
-            broadcastToLobby(code, { action: 'SYSTEM_MESSAGE', content: `Tous les joueurs ont accepté ! Veuillez entrer votre contribution.` });
-            
-            // Changer le statut local des contributions pour être prêt à recevoir des montants
-            lobby.pendingWork.contributions = {}; 
-        }
-    }
-}
-
-function handleSubmitContribution(ws, data) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-    if (!lobby || lobby.gameStatus !== GAME_STATUS.STARTED || lobby.pendingWork.contributions[ws.userId] !== undefined) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Soumission de contribution impossible.' });
-    }
-
-    const contribution = parseInt(data.contribution, 10);
-    const cost = lobby.pendingWork.costPerPlayer;
-    const playerEnergy = lobby.players[ws.userId].energy;
-
-    if (isNaN(contribution) || contribution < 1 || contribution > 100) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Contribution invalide (doit être entre 1 et 100).' });
-    }
-    if (contribution > playerEnergy) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Contribution supérieure à votre énergie disponible.' });
-    }
-    if (contribution > cost) {
-         return sendToClient(ws, { action: 'ERROR', content: `Contribution maximale autorisée: ${cost}.` });
-    }
-
-    // Enregistrer la contribution
-    lobby.pendingWork.contributions[ws.userId] = contribution;
-    sendToClient(ws, { action: 'SYSTEM_MESSAGE', content: `Votre contribution de ${contribution} points est enregistrée.` });
-
-    const totalPlayers = lobby.pendingWork.targetIds.length + 1; // Cibles + Proposer
-    
-    // Vérifier si toutes les contributions sont reçues
-    if (Object.keys(lobby.pendingWork.contributions).length === totalPlayers) {
-        
-        const allContributions = Object.values(lobby.pendingWork.contributions);
-        const totalContribution = allContributions.reduce((sum, val) => sum + val, 0);
-        
-        // Vérification de la réussite (Chance de réussite = totalContribution / 200)
-        // La réussite est basée sur un jet aléatoire
-        const successChance = totalContribution / WORK_COST; // Max 1.0 (100%) si totalContribution = 200
-        const successRoll = Math.random(); // Nombre aléatoire entre 0 et 1
-
-        let workSuccessful = successRoll < successChance;
-        let resultMessage;
-        
-        if (workSuccessful) {
-            lobby.currentJobPoints += WORK_COST;
-            resultMessage = `SUCCÈS ! Les contributions totalisent ${totalContribution} points (Chance: ${Math.round(successChance * 100)}%). ${WORK_COST} points de travail ajoutés.`;
-        } else {
-            resultMessage = `ÉCHEC ! Les contributions totalisent ${totalContribution} points (Chance: ${Math.round(successChance * 100)}%). Zéro point ajouté.`;
-        }
-
-        // Pénalité/Récompense
-        allPlayerIds = [lobby.pendingWork.proposerId, ...lobby.pendingWork.targetIds];
-        allPlayerIds.forEach(id => {
-            const contributionAmount = lobby.pendingWork.contributions[id];
-            // Les joueurs perdent leur énergie (qu'il y ait succès ou échec)
-            lobby.players[id].energy = Math.max(0, lobby.players[id].energy - contributionAmount);
-            // La logique du user dit "perdent leur énergie" si échec, et "s'ajoute les 200 points" si succès.
-            // Cependant, le coût est déduit via la contribution. Si échec, l'énergie est perdue sans gain.
-        });
-        
-        broadcastToLobby(code, { action: 'SYSTEM_MESSAGE', content: `**Rapport Final:** ${resultMessage}` });
-        
-        // Réinitialiser le travail en cours
-        lobby.pendingWork = { proposerId: null, targetIds: [], targetNames: [], costPerPlayer: 0, contributions: {} };
-        
-        // Vérification de la fin de manche (points atteints)
-        if (lobby.currentJobPoints >= lobby.jobPointsGoal) {
-            clearInterval(lobby.gameTimerInterval);
-            broadcastToLobby(code, { action: 'SYSTEM_MESSAGE', content: 'OBJECTIF ATTEINT ! Fin de la manche.' });
-            endRound(code, true);
-        } else {
-            // Mise à jour de l'UI et de l'énergie après résolution
-            sendLobbyUpdate(code);
-        }
-    }
-}
-
-
-// --- Gestionnaires d'actions du client ---
-
-// (Fonctions handleCreateLobby, handleJoinLobby, handleLeaveLobby restent inchangées dans leur structure de base)
-
-/** Gère la création d'un nouveau salon. */
-function handleCreateLobby(ws, data) {
-    if (ws.lobbyCode) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Vous êtes déjà dans le salon ' + ws.lobbyCode });
-    }
-
-    const code = generateUniqueCode();
-    const nickname = data.nickname || 'Anonyme';
-    const userId = data.userId;
-
-    const lobby = {
-        code: code,
-        hostId: userId,
-        clients: [ws],
-        gameStatus: GAME_STATUS.WAITING,
-        currentRound: 0,
-        jobPointsGoal: WORK_GOAL,
-        currentJobPoints: 0,
-        roundTimer: 0,
-        gameTimerInterval: null,
-        energyInterval: null,
-        pendingWork: { proposerId: null, targetIds: [], targetNames: [], costPerPlayer: 0, contributions: {} },
-        votes: {},
-        players: {
-            [userId]: { nickname: nickname, role: null, energy: MAX_ENERGY, jobPoints: 0, totalScore: 0, roundScore: 0 }
-        }
-    };
-    codeToLobbyMap.set(code, lobby);
-
-    ws.lobbyCode = code;
-    ws.userId = userId;
-    ws.nickname = nickname;
-
-    console.log(`Salon créé: ${code} par ${nickname} (${userId})`);
-
-    sendToClient(ws, { action: 'LOBBY_CREATED', code: code, userId: userId });
-    sendLobbyUpdate(code);
-}
-
-/** Gère la tentative de rejoindre un salon existant. */
-function handleJoinLobby(ws, data) {
-    if (ws.lobbyCode) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Vous êtes déjà dans le salon ' + ws.lobbyCode });
-    }
-
-    const code = data.code;
-    const nickname = data.nickname || 'Anonyme';
-    const userId = data.userId;
-    const lobby = codeToLobbyMap.get(code);
-
-    if (!lobby) {
-        return sendToClient(ws, { action: 'ERROR', content: `Salon ${code} introuvable.` });
-    }
-
-    if (lobby.clients.length >= MAX_PLAYERS) {
-        return sendToClient(ws, { action: 'ERROR', content: `Salon ${code} est plein.` });
-    }
-    
-    // Si déjà présent, rejeter
-    if (lobby.clients.some(client => client.userId === userId)) {
-        return sendToClient(ws, { action: 'ERROR', content: `Un utilisateur avec cet ID est déjà connecté au salon ${code}.` });
-    }
-
-    // Ajouter le client au salon
-    lobby.clients.push(ws);
-    lobby.players[userId] = { nickname: nickname, role: null, energy: MAX_ENERGY, jobPoints: 0, totalScore: 0, roundScore: 0 };
-
-    ws.lobbyCode = code;
-    ws.userId = userId;
-    ws.nickname = nickname;
-
-    console.log(`${nickname} (${userId}) a rejoint le salon ${code}.`);
-
-    sendToClient(ws, { action: 'LOBBY_JOINED', code: code, userId: userId });
-
-    broadcastToLobby(code, {
-        action: 'SYSTEM_MESSAGE',
-        content: `${nickname} a rejoint le salon.`,
-        timestamp: Date.now()
-    });
-
-    sendLobbyUpdate(code);
-}
-
-/** Gère l'envoi d'un message de chat. */
-function handleMessage(ws, data) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-    if (!code || !lobby) return; 
-    
-    // Déduite de l'énergie pour un message standard
-    if (lobby.gameStatus === GAME_STATUS.STARTED || lobby.gameStatus === GAME_STATUS.VOTING) {
-        const player = lobby.players[ws.userId];
-        if (player.energy >= ENERGY_MESSAGE_COST) {
-            player.energy -= ENERGY_MESSAGE_COST;
-            sendLobbyUpdate(code); // Mise à jour de l'énergie
-        } else {
-             return sendToClient(ws, { action: 'ERROR', content: 'Énergie insuffisante pour envoyer un message de chat.' });
-        }
-    }
-
-    // Diffuser le message
-    broadcastToLobby(code, {
-        action: 'MESSAGE',
-        userId: ws.userId,
-        nickname: ws.nickname,
-        content: data.content,
-        timestamp: Date.now()
-    });
-}
-
-/** Gère le lancement de la partie. */
-function handleStartGame(ws) {
-    const code = ws.lobbyCode;
-    const lobby = codeToLobbyMap.get(code);
-
-    if (!lobby || lobby.gameStatus !== GAME_STATUS.WAITING || lobby.hostId !== ws.userId || lobby.clients.length < MIN_PLAYERS) {
-        return sendToClient(ws, { action: 'ERROR', content: 'Impossible de démarrer la partie (conditions non remplies).' });
-    }
-
-    broadcastToLobby(code, {
-        action: 'SYSTEM_MESSAGE',
-        content: `L'hôte a démarré la partie !`,
-        timestamp: Date.now()
-    });
-    
-    startNewRound(code);
-}
-
-
-// --- Événements WebSocket ---
-
-wss.on('connection', function connection(ws, req) {
-    console.log('Nouveau client connecté.');
-
-    // Ajouter les propriétés de base pour le nettoyage
+wss.on('connection', (ws, req) => {
+    // Assigner un identifiant unique (UUID ou similaire) à la connexion
+    ws.id = require('crypto').randomUUID(); 
     ws.lobbyCode = null;
-    ws.userId = null;
     ws.nickname = null;
 
-    ws.on('message', function incoming(message) {
-        let data;
-        try {
-            data = JSON.parse(message);
-        } catch (e) {
-            console.error('Erreur de parsing du message:', message);
-            return;
-        }
+    console.log(`Nouveau client connecté: ${ws.id}`);
 
-        switch (data.action) {
-            case 'CREATE_LOBBY':
-                handleCreateLobby(ws, data);
-                break;
-            case 'JOIN_LOBBY':
-                handleJoinLobby(ws, data);
-                break;
-            case 'MESSAGE':
-                handleMessage(ws, data); // Chat normal (avec coût énergie)
-                break;
-            case 'START_GAME': 
-                handleStartGame(ws);
-                break;
-            case 'LEAVE_LOBBY':
-                handleLeaveLobby(ws, false); 
-                break;
-            case 'TEAMWORK_PROPOSAL':
-                 handleTeamworkProposal(ws, data); // "rapport [nom]"
-                 break;
-            case 'WORK_RESPONSE':
-                 handleTeamworkResponse(ws, data); // "oui" ou "non"
-                 break;
-            case 'SUBMIT_CONTRIBUTION':
-                handleSubmitContribution(ws, data); // Montant du travail (1-100)
-                break;
-            case 'VOTE':
-                 handleVote(ws, data); // "vote [nom]"
-                 break;
-            default:
-                sendToClient(ws, { action: 'ERROR', content: 'Action inconnue.' });
-                break;
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            handleClientAction(ws, data);
+        } catch (e) {
+            console.error(`Erreur de parsing JSON: ${e.message}`, message);
+            sendToClient(ws, { action: 'ERROR', content: 'Format de message invalide.' });
         }
     });
 
     ws.on('close', () => {
-        console.log(`Client déconnecté: ${ws.nickname} (${ws.userId})`);
-        handleLeaveLobby(ws, true); 
+        console.log(`Client déconnecté: ${ws.id}`);
+        handleLeaveLobby(ws, true); // true = isDisconnect
     });
 
-    ws.on('error', (err) => {
-        console.error('Erreur WebSocket:', err);
+    ws.on('error', (error) => {
+        console.error(`Erreur WebSocket pour ${ws.id}:`, error.message);
     });
 });
 
-/** Gère le départ d'un client (volontaire ou déconnexion). */
+/** Traite les actions envoyées par les clients. */
+function handleClientAction(ws, data) {
+    const lobby = codeToLobbyMap.get(ws.lobbyCode);
+    
+    switch (data.action) {
+        case 'CREATE_LOBBY':
+            handleCreateLobby(ws, data.nickname);
+            break;
+
+        case 'JOIN_LOBBY':
+            handleJoinLobby(ws, data.code, data.nickname);
+            break;
+
+        case 'LEAVE_LOBBY':
+            handleLeaveLobby(ws, false);
+            break;
+
+        case 'START_GAME':
+            if (lobby && ws.id === lobby.hostId && lobby.gameStatus === GAME_STATUS.WAITING) {
+                startGame(ws.lobbyCode);
+            } else {
+                sendToClient(ws, { action: 'ERROR', content: "Seul l'hôte peut démarrer le jeu en attente." });
+            }
+            break;
+            
+        case 'START_NEXT_ROUND':
+             if (lobby && ws.id === lobby.hostId && lobby.gameStatus === GAME_STATUS.ROUND_END) {
+                startNextRound(ws.lobbyCode);
+            } else {
+                sendToClient(ws, { action: 'ERROR', content: "Seul l'hôte peut démarrer la prochaine manche." });
+            }
+            break;
+
+        case 'MESSAGE':
+            if (lobby && lobby.gameStatus === GAME_STATUS.STARTED && ws.lobbyCode) {
+                const player = lobby.players[ws.id];
+                const content = data.content.trim();
+
+                if (content && player) {
+                    // Vérification de l'énergie
+                    if (player.energy >= ENERGY_COST_MESSAGE) {
+                        player.energy -= ENERGY_COST_MESSAGE;
+                        
+                        // Envoi du message à tous les clients
+                        broadcastToLobby(ws.lobbyCode, {
+                            action: 'MESSAGE',
+                            sender: player.nickname,
+                            content: content,
+                            timestamp: Date.now()
+                        });
+                        
+                        // Mettre à jour l'énergie de tous les joueurs (pour l'affichage)
+                        sendLobbyUpdate(ws.lobbyCode);
+
+                    } else {
+                        sendToClient(ws, { action: 'ERROR', content: "Énergie insuffisante pour envoyer un message." });
+                    }
+                }
+            }
+            break;
+            
+        case 'REQUEST_TEAMWORK':
+            if (lobby && lobby.gameStatus === GAME_STATUS.STARTED && ws.lobbyCode) {
+                const requestingPlayer = lobby.players[ws.id];
+                const targetPlayerId = data.targetId;
+                const targetPlayer = lobby.players[targetPlayerId];
+
+                // POINT 4: Empêcher le joueur de s'inclure lui-même dans les travaux
+                if (ws.id === targetPlayerId) {
+                    sendToClient(ws, { 
+                        action: 'ERROR', 
+                        content: `Vous ne pouvez pas demander de travailler en équipe avec vous-même.` 
+                    });
+                    return;
+                }
+
+                if (requestingPlayer && targetPlayer) {
+                    // Logic for teamwork request (e.g., spending energy, sending request to target)
+                    // Pour l'instant, on envoie juste un message de chat pour simuler
+                    const content = `${requestingPlayer.nickname} demande à travailler en équipe avec ${targetPlayer.nickname} !`;
+
+                    // Envoi d'un message système dans le chat pour annoncer la demande
+                    broadcastToLobby(ws.lobbyCode, {
+                        action: 'SYSTEM_MESSAGE',
+                        content: content,
+                        timestamp: Date.now()
+                    });
+                    
+                    // TODO: Envoyer l'action spécifique au joueur cible pour qu'il puisse accepter/refuser
+                    sendToClient(targetPlayer, {
+                        action: 'TEAMWORK_REQUEST_RECEIVED',
+                        from: requestingPlayer.nickname,
+                        fromId: ws.id
+                    });
+                    
+                } else {
+                    sendToClient(ws, { action: 'ERROR', content: "Joueur cible introuvable." });
+                }
+            }
+            break;
+
+        default:
+            console.warn(`Action inconnue reçue de ${ws.id}: ${data.action}`);
+            break;
+    }
+}
+
+/** Crée un nouveau salon. */
+function handleCreateLobby(ws, nickname) {
+    if (ws.lobbyCode) {
+        sendToClient(ws, { action: 'ERROR', content: `Vous êtes déjà dans le salon ${ws.lobbyCode}.` });
+        return;
+    }
+
+    const code = generateUniqueCode();
+    ws.lobbyCode = code;
+    ws.nickname = nickname.substring(0, 15).trim() || `Joueur${code}`; // 15 caractères max
+
+    const newLobby = {
+        code: code,
+        hostId: ws.id,
+        clients: [ws],
+        gameStatus: GAME_STATUS.WAITING,
+        players: {
+            [ws.id]: {
+                id: ws.id,
+                nickname: ws.nickname,
+                role: null,
+                energy: 5, // Initial energy
+                score: 0
+            }
+        },
+        gameData: {
+            currentRound: 0,
+            energyInterval: null,
+            // roundTimer: null,
+            // patronneMessageInterval: null,
+            previousPlayersData: {} // Stocke l'énergie des joueurs de la manche précédente
+        }
+    };
+    codeToLobbyMap.set(code, newLobby);
+
+    console.log(`Salon créé par ${ws.id} (${ws.nickname}) avec le code ${code}.`);
+
+    sendToClient(ws, { 
+        action: 'LOBBY_CREATED', 
+        code: code 
+    });
+    
+    sendLobbyUpdate(code);
+}
+
+/** Rejoindre un salon existant. */
+function handleJoinLobby(ws, code, nickname) {
+    if (ws.lobbyCode) {
+        sendToClient(ws, { action: 'ERROR', content: `Vous êtes déjà dans le salon ${ws.lobbyCode}.` });
+        return;
+    }
+
+    const lobby = codeToLobbyMap.get(code);
+
+    if (!lobby) {
+        sendToClient(ws, { action: 'ERROR', content: `Salon ${code} introuvable.` });
+        return;
+    }
+
+    if (lobby.gameStatus !== GAME_STATUS.WAITING) {
+        sendToClient(ws, { action: 'ERROR', content: `Le jeu a déjà commencé dans le salon ${code}.` });
+        return;
+    }
+
+    if (lobby.clients.length >= MAX_PLAYERS) {
+        sendToClient(ws, { action: 'ERROR', content: `Le salon ${code} est plein.` });
+        return;
+    }
+    
+    // Vérifier si le pseudonyme est déjà pris (insensible à la casse)
+    const existingNicknames = Object.values(lobby.players).map(p => p.nickname.toLowerCase());
+    const newNickname = nickname.substring(0, 15).trim() || `Joueur${code}`;
+    
+    if (existingNicknames.includes(newNickname.toLowerCase())) {
+         sendToClient(ws, { action: 'ERROR', content: `Le pseudonyme '${newNickname}' est déjà utilisé dans ce salon.` });
+         return;
+    }
+
+    // Ajout au salon
+    ws.lobbyCode = code;
+    ws.nickname = newNickname;
+    lobby.clients.push(ws);
+    lobby.players[ws.id] = {
+        id: ws.id,
+        nickname: ws.nickname,
+        role: null,
+        energy: 5, // Initial energy
+        score: 0
+    };
+
+    console.log(`${ws.nickname} a rejoint le salon ${code}.`);
+    
+    sendToClient(ws, { action: 'LOBBY_JOINED', code: code });
+
+    // Informer les autres
+    broadcastToLobby(code, {
+        action: 'SYSTEM_MESSAGE',
+        content: `${ws.nickname} a rejoint le salon.`
+    });
+
+    sendLobbyUpdate(code);
+}
+
+/** Gère la sortie du salon. */
 function handleLeaveLobby(ws, isDisconnect) {
     const code = ws.lobbyCode;
-    const nickname = ws.nickname || 'Un joueur';
-
-    if (code && codeToLobbyMap.has(code)) {
+    const nickname = ws.nickname;
+    
+    if (code) {
         const lobby = codeToLobbyMap.get(code);
 
-        const clientIndex = lobby.clients.findIndex(client => client.userId === ws.userId);
-        if (clientIndex !== -1) {
-            lobby.clients.splice(clientIndex, 1);
-            delete lobby.players[ws.userId]; 
-            console.log(`${nickname} a quitté/déconnecté du salon ${code}.`);
-        }
+        if (lobby) {
+            // Retirer le client et le joueur
+            lobby.clients = lobby.clients.filter(client => client.id !== ws.id);
+            if (lobby.players[ws.id]) {
+                delete lobby.players[ws.id];
+            }
+            
+            // Si le joueur qui quitte était l'hôte
+            if (lobby.hostId === ws.id) {
+                if (lobby.clients.length > 0) {
+                    // Transférer l'hôte au premier client restant
+                    const newHostId = lobby.clients[0].id;
+                    lobby.hostId = newHostId;
+                    console.log(`L'hôte a quitté. Nouvel hôte dans le salon ${code}: ${newHostId}`);
 
-        // Si c'était l'hôte, transférer les droits et arrêter les timers si vide
-        if (lobby.hostId === ws.userId) {
-            if (lobby.clients.length > 0) {
-                const newHostId = lobby.clients[0].userId;
-                lobby.hostId = newHostId;
-                
-                sendToClient(lobby.clients[0], {
+                    // Informer le nouvel hôte
+                     sendToClient(lobby.clients[0], {
+                        action: 'SYSTEM_MESSAGE',
+                        content: `Vous êtes le nouvel hôte du salon !`,
+                        timestamp: Date.now()
+                    });
+                } else if (lobby.clients.length === 0) {
+                    // Si le salon est vide, le supprimer
+                    codeToLobbyMap.delete(code);
+                    stopEnergyGain(code); // S'assurer d'arrêter le gain d'énergie si le salon est vide
+                    console.log(`Salon ${code} supprimé car il est vide.`);
+                }
+            }
+
+            // Si le salon existe encore, notifier les autres clients
+            if (codeToLobbyMap.has(code)) {
+                // Envoyer un message système aux membres restants
+                broadcastToLobby(code, {
                     action: 'SYSTEM_MESSAGE',
-                    content: `Vous êtes le nouvel hôte du salon !`,
+                    content: `${nickname} a quitté le salon.`,
                     timestamp: Date.now()
                 });
-            } else if (lobby.clients.length === 0) {
-                stopLobbyTimers(code); // Arrêter les timers avant de supprimer
-                codeToLobbyMap.delete(code);
-                console.log(`Salon ${code} supprimé car il est vide.`);
+
+                // Mettre à jour l'UI de tous les clients restants (compte de joueurs, nouvel hôte)
+                sendLobbyUpdate(code);
             }
-        } 
-        
-        // Si le salon est vide après le départ
-        if (lobby.clients.length === 0 && codeToLobbyMap.has(code)) {
-             stopLobbyTimers(code); // Arrêter les timers
-             codeToLobbyMap.delete(code);
-             console.log(`Salon ${code} supprimé car il est vide.`);
+
+            // Informer le client qu'il a quitté (seulement s'il ne se déconnecte pas)
+            if (!isDisconnect) {
+                sendToClient(ws, { action: 'LOBBY_LEFT' });
+            }
         }
-
-
-        // Si le salon existe encore, notifier les autres clients
-        if (codeToLobbyMap.has(code)) {
-            broadcastToLobby(code, {
-                action: 'SYSTEM_MESSAGE',
-                content: `${nickname} a quitté le salon.`,
-                timestamp: Date.now()
-            });
-            sendLobbyUpdate(code);
-        }
-
-        if (!isDisconnect) {
-            sendToClient(ws, { action: 'LOBBY_LEFT' });
-        }
-
         ws.lobbyCode = null;
-        ws.userId = null;
         ws.nickname = null;
     }
 }
