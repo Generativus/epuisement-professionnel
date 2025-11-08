@@ -796,11 +796,13 @@
         });
         
         document.getElementById('join-lobby-prompt-btn').addEventListener('click', () => {
-            const code = prompt("Entrez le code du salon (4 chiffres) :");
+            // CORRECTION: Changer 4 chiffres pour 5 chiffres
+            const code = prompt("Entrez le code du salon (5 chiffres) :");
             const nick = nicknameInput.value.trim();
 
-            if (!code || !/^\d{4}$/.test(code)) {
-                displayError("Code de salon invalide. Doit être 4 chiffres.");
+            // CORRECTION: Expression régulière mise à jour pour accepter 5 chiffres
+            if (!code || !/^\d{5}$/.test(code)) {
+                displayError("Code de salon invalide. Doit être 5 chiffres.");
                 return;
             }
             if (nick.length < 3 || nick.length > 15) {
